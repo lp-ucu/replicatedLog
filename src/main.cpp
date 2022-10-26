@@ -6,33 +6,23 @@
 //
 
 #include <iostream>
-#include <grpc++/grpc++.h>
-#include <memory>
-
-
-#include "crow_all.h"
 
 #include <grpcpp/grpcpp.h>
-#include <grpc/grpc.h>
-
 #include "replicate.grpc.pb.h"
-//#include "message.pb.h"
 
-//possibly client
+#include "crow_all.h" //http server
+
 using grpc::Channel;
 using grpc::ClientContext;
 using grpc::Status;
 
-//probably server
 using grpc::Server;
 using grpc::ServerBuilder;
 using grpc::ServerContext;
 
-
 using replicatedlog::ReplicateService;
 using replicatedlog::ReplicateResponce;
 using replicatedlog::MessageItem;
-using replicatedlog::MessageItems;
 
 bool isMaster = false;
 crow::SimpleApp app;
@@ -119,13 +109,6 @@ void replicateMessageRPC(const std::string& message, const int64_t id) {
 }
 void setupRoutes(bool isMaster)
 {
-    CROW_ROUTE(app, "/get_test")
-      .methods("GET"_method)([](const crow::request& req) {
-          std::ostringstream os;
-          os << "testetsttest";
-          return crow::response{os.str()};
-      });
-    
     CROW_ROUTE(app, "/json_list")
         .methods("GET"_method)([](const crow::request& req) {
             crow::json::wvalue x = crow::json::wvalue::list(messages);
