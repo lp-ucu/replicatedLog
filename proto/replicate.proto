@@ -1,0 +1,33 @@
+//
+//  replicate.proto
+//  replicatedlog
+//
+//  Created by Liudmyla Patenko on 25.10.2022.
+//
+
+syntax = "proto3";
+
+//option cc_generic_services = true;
+//option objc_class_prefix = "HLW";
+
+package replicatedlog;
+
+service ReplicateService {
+    rpc appendMessage(MessageItem) returns(ReplicateResponce) {}
+    rpc readMessagess(Nothing) returns(MessageItems) {}
+}
+
+message ReplicateResponce {
+    int32 res = 1;
+}
+
+message MessageItem {
+    int32 id = 1;
+    string text = 2;
+}
+
+message MessageItems {
+    repeated MessageItem item = 1;
+}
+
+message Nothing {}
