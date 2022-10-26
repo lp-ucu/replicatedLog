@@ -5,6 +5,12 @@ set(CMAKE_CXX_STANDARD 14)
 
 find_package(Threads)
 
+
+find_path(ASIO_INCLUDE_DIR asio.hpp)
+message(STATUS "asio found in ${ASIO_INCLUDE_DIR}")
+
+include_directories(${ASIO_INCLUDE_DIR})
+
 set(protobuf_MODULE_COMPATIBLE TRUE)
 find_package(Protobuf CONFIG REQUIRED)
 message(STATUS "Using protobuf ${Protobuf_VERSION}")
