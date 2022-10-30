@@ -141,7 +141,11 @@ void startHttpServer(bool isMaster)
                 //          sleep(10);
                 //          std::cout << "2 " << x["message"].s() << std::endl;
                 
+//TODO: id_count make atomic, static, not global,...
+//TODO: int local_id = ++id_count;
                 saveMessage(x["message"].s(), ++id_count);
+//TODO: config of our dist system (how many slaves, ports, hostnames/ip)
+//TODO: send rpc in separate threads if confirmed
                 replicateMessageRPC(x["message"].s(), id_count);
                 return crow::response{201};
             });
@@ -155,6 +159,7 @@ int main(int argc, const char * argv[]) {
     std::cout << "Starting replicated log process" << std::endl;
     if (argc == 1 || std::string(argv[1]) == "-m")
         isMaster = true;
+//TODO: logger, add more logs, add format for the logs; configure log stream in function to configure it in cunfig
     std::cout << "Running as " << (isMaster ? "master" : "slave") << std::endl;
 
     std::thread httpThread(startHttpServer, isMaster);
@@ -163,5 +168,7 @@ int main(int argc, const char * argv[]) {
     serviceThread.join();
     httpThread.join();
 
+//TODO: dockerfile, docker composer
+//TODO: refactor code to use classes
     return 0;
 }
