@@ -12,6 +12,7 @@
 #include "replicate.grpc.pb.h"
 
 #include "crow_all.h" //http server
+#include "Logger.hpp"
 
 #define MASTER_HTTP_PORT 18080
 #define SLAVE_HTTP_PORT 28080
@@ -40,7 +41,7 @@ std::vector<crow::json::wvalue> messages;
 
 class ReplicateServiceImpl final : public ReplicateService::Service {
     Status appendMessage(ServerContext* context, const MessageItem* message, ReplicateResponce* response) override {
-        std::cout << "replicating message: '" << message->text() << "' with id: " << message->id() << std::endl;
+        LOG_DEBUG << "replicating message: '" << message->text() << "' with id: " << message->id();
         messages.push_back(message->text());
         response->set_res(0);
         return Status::OK;
@@ -62,7 +63,7 @@ void runReplicateService(bool isMaster, const std::string port) {
     std::unique_ptr<Server> server{builder.BuildAndStart()};
     
     // Run server
-    std::cout << "Replicate service is listening on " << server_address << std::endl;
+    LOG_INFO << "replicate service is listening on " << server_address << ":" << port;
     server->Wait();
 }
 
@@ -85,9 +86,10 @@ public:
 
         // Handle response
         if (status.ok()) {
+            LOG_DEBUG << "message '" << text << "' is succefully replicated";
             return response.res();
         } else {
-            std::cerr << status.error_code() << ": " << status.error_message() << std::endl;
+            LOG_ERROR << status.error_code() << ": " << status.error_message();
             return -1;
         }
     }
@@ -98,13 +100,13 @@ private:
 
 void replicateMessage(std::string message)
 {
-    std::cout << "replicateMessage " << message << std::endl;
+    LOG_INFO << "replicateMessage " << message;
     return;
 }
 
 int saveMessage(std::string message, int64_t id)
 {
-    std::cout << "saveMessage '" << message << "' with id: " << id << std::endl;
+    LOG_DEBUG << "saveMessage '" << message << "' with id: " ;
 //    messages.insert(std::pair<uint64_t,std::string>(id_count, message));
 //TODO: make threadsafe
     messages.push_back(message);
@@ -116,7 +118,7 @@ void replicateMessageRPC(const std::string& message, const int64_t id) {
     slave_address.append(SLAVE_RPC_PORT);
     ReplicatedLogMaster master{grpc::CreateChannel(slave_address, grpc::InsecureChannelCredentials())};
     int64_t res = master.appendMessage(id, message);
-    std::cout << "Response from slave: " << res << std::endl;
+    LOG_DEBUG << "Response from slave: ";
 }
 
 void startHttpServer(bool isMaster)
@@ -140,7 +142,7 @@ void startHttpServer(bool isMaster)
                 //          std::cout << "1 " << x["message"].s() << std::endl;
                 //          sleep(10);
                 //          std::cout << "2 " << x["message"].s() << std::endl;
-                
+                LOG_DEBUG << "received POST with message " << x["message"].s();
 //TODO: id_count make atomic, static, not global,...
 //TODO: int local_id = ++id_count;
                 saveMessage(x["message"].s(), ++id_count);
