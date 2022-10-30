@@ -6,11 +6,16 @@
 //
 
 #include <iostream>
+#include <thread>
 
 #include <grpcpp/grpcpp.h>
 #include "replicate.grpc.pb.h"
 
 #include "crow_all.h" //http server
+
+#define MASTER_HTTP_PORT 18080
+#define SLAVE_HTTP_PORT 28080
+#define SLAVE_RPC_PORT "2510"
 
 using grpc::Channel;
 using grpc::ClientContext;
@@ -36,13 +41,18 @@ std::vector<crow::json::wvalue> messages;
 class ReplicateServiceImpl final : public ReplicateService::Service {
     Status appendMessage(ServerContext* context, const MessageItem* message, ReplicateResponce* response) override {
         std::cout << "replicating message: '" << message->text() << "' with id: " << message->id() << std::endl;
+        messages.push_back(message->text());
         response->set_res(0);
         return Status::OK;
     }
 };
 
-void runReplicateService() {
-    std::string server_address{"localhost:2510"};
+void runReplicateService(bool isMaster, const std::string port) {
+    if (isMaster)
+        return;
+    
+    std::string server_address{"localhost:"};
+    server_address.append(port);
     ReplicateServiceImpl service;
     
     // Build server
@@ -92,63 +102,66 @@ void replicateMessage(std::string message)
     return;
 }
 
-int saveMessage(std::string message)
+int saveMessage(std::string message, int64_t id)
 {
-    std::cout << "saveMessage " << message << std::endl;
+    std::cout << "saveMessage '" << message << "' with id: " << id << std::endl;
 //    messages.insert(std::pair<uint64_t,std::string>(id_count, message));
-//    id_count++;
+//TODO: make threadsafe
     messages.push_back(message);
     return 0;
 }
 
 void replicateMessageRPC(const std::string& message, const int64_t id) {
-    std::string slave_address{"localhost:2510"};
+    std::string slave_address{"localhost:"};
+    slave_address.append(SLAVE_RPC_PORT);
     ReplicatedLogMaster master{grpc::CreateChannel(slave_address, grpc::InsecureChannelCredentials())};
     int64_t res = master.appendMessage(id, message);
-    std::cout << "Responce from slave: " << res << std::endl;
+    std::cout << "Response from slave: " << res << std::endl;
 }
-void setupRoutes(bool isMaster)
+
+void startHttpServer(bool isMaster)
 {
-    CROW_ROUTE(app, "/json_list")
+    CROW_ROUTE(app, "/messages")
         .methods("GET"_method)([](const crow::request& req) {
             crow::json::wvalue x = crow::json::wvalue::list(messages);
             return x;
-//            std::ostringstream os;
-//            os << "testetsttest";
-//            return crow::response{os.str()};
     });
     
-    if (!isMaster)
-        return;
+    if (isMaster) {
+        CROW_ROUTE(app, "/message")
+            .methods("POST"_method)([](const crow::request& req) {
+                auto x = crow::json::load(req.body);
+                
+                if (!x)
+                    return crow::response(400);
+                else if (!x.has("message"))
+                    return crow::response(400);
+                
+                //          std::cout << "1 " << x["message"].s() << std::endl;
+                //          sleep(10);
+                //          std::cout << "2 " << x["message"].s() << std::endl;
+                
+                saveMessage(x["message"].s(), ++id_count);
+                replicateMessageRPC(x["message"].s(), id_count);
+                return crow::response{201};
+            });
+    }
     
-    CROW_ROUTE(app, "/add_json")
-      .methods("POST"_method)([](const crow::request& req) {
-          auto x = crow::json::load(req.body);
-
-          if (!x)
-              return crow::response(400);
-          else if (!x.has("message"))
-              return crow::response(400);
-          
-          std::cout << "1 " << x["message"].s() << std::endl;
-          sleep(10);
-          std::cout << "2 " << x["message"].s() << std::endl;
-          
-          saveMessage(x["message"].s());
-          replicateMessageRPC(x["message"].s(), id_count);
-          return crow::response{201};
-      });
+    uint64_t port = isMaster ? MASTER_HTTP_PORT : SLAVE_HTTP_PORT;
+    app.port(port).multithreaded().run();
 }
 
 int main(int argc, const char * argv[]) {
-    // insert code here...
-//    if (argc == 1 && argv[0] == "master")
-//        isMaster = true;
-    setupRoutes(true);
-    
-    app.port(18080).multithreaded().run();
+    std::cout << "Starting replicated log process" << std::endl;
+    if (argc == 1 || std::string(argv[1]) == "-m")
+        isMaster = true;
+    std::cout << "Running as " << (isMaster ? "master" : "slave") << std::endl;
 
+    std::thread httpThread(startHttpServer, isMaster);
+    std::thread serviceThread(runReplicateService, isMaster, SLAVE_RPC_PORT);
 
-    
+    serviceThread.join();
+    httpThread.join();
+
     return 0;
 }
