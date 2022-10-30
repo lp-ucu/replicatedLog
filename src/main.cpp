@@ -158,11 +158,13 @@ void startHttpServer(bool isMaster)
 }
 
 int main(int argc, const char * argv[]) {
-    std::cout << "Starting replicated log process" << std::endl;
+    //set filename if need to redirect all logs to file
+    Logger logger(REDIRECT_LOG_FILE);
+
+    LOG_INFO << "Starting replicated log process";
     if (argc == 1 || std::string(argv[1]) == "-m")
         isMaster = true;
-//TODO: logger, add more logs, add format for the logs; configure log stream in function to configure it in cunfig
-    std::cout << "Running as " << (isMaster ? "master" : "slave") << std::endl;
+    LOG_INFO << "Running as " << (isMaster ? "master" : "slave");
 
     std::thread httpThread(startHttpServer, isMaster);
     std::thread serviceThread(runReplicateService, isMaster, SLAVE_RPC_PORT);
