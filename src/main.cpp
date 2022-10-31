@@ -165,7 +165,7 @@ void startHttpServer(bool isMaster)
 
 int main(int argc, const char * argv[]) {
     //set filename if need to redirect all logs to file
-    Logger logger(REDIRECT_LOG_FILE);
+    Logger logger("");
 
     LOG_INFO << "Starting replicated log process";
     if (argc == 1 || std::string(argv[1]) == "-m")
