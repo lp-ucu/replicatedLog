@@ -32,8 +32,7 @@ using replicatedlog::MessageItem;
 
 bool isMaster = false;
 crow::SimpleApp app;
-//uint64_t id_count = 0;
-int64_t id_count = 0;
+size_t id_count = 0;
 
 //std::map<uint64_t, std::string> messages;
 std::vector<crow::json::wvalue> messages;
@@ -72,7 +71,7 @@ public:
     ReplicatedLogMaster(std::shared_ptr<Channel> channel) :
     _stub{ReplicateService::NewStub(channel)} {}
 
-    int64_t appendMessage(const int64_t id, const std::string& text) {
+    int64_t appendMessage(const size_t id, const std::string& text) {
         // Prepare request
         MessageItem message;
         message.set_id(id);
@@ -104,7 +103,7 @@ void replicateMessage(std::string message)
     return;
 }
 
-int saveMessage(std::string message, int64_t id)
+int saveMessage(std::string message, size_t id)
 {
     LOG_DEBUG << "saveMessage '" << message << "' with id: " ;
 //    messages.insert(std::pair<uint64_t,std::string>(id_count, message));
@@ -113,7 +112,7 @@ int saveMessage(std::string message, int64_t id)
     return 0;
 }
 
-void replicateMessageRPC(const std::string& message, const int64_t id) {
+void replicateMessageRPC(const std::string& message, const size_t id) {
     std::string slave_address{"localhost:"};
     slave_address.append(SLAVE_RPC_PORT);
     ReplicatedLogMaster master{grpc::CreateChannel(slave_address, grpc::InsecureChannelCredentials())};
@@ -144,11 +143,10 @@ void startHttpServer(bool isMaster)
                 //          std::cout << "2 " << x["message"].s() << std::endl;
                 LOG_DEBUG << "received POST with message " << x["message"].s();
 //TODO: id_count make atomic, static, not global,...
-//TODO: int local_id = ++id_count;
+                size_t local_id = ++id_count;
                 saveMessage(x["message"].s(), ++id_count);
-//TODO: config of our dist system (how many slaves, ports, hostnames/ip)
 //TODO: send rpc in separate threads if confirmed
-                replicateMessageRPC(x["message"].s(), id_count);
+                replicateMessageRPC(x["message"].s(), local_id);
                 return crow::response{201};
             });
     }
