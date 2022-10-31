@@ -7,6 +7,7 @@
 
 #include <iostream>
 #include <thread>
+#include <tuple>
 
 #include <grpcpp/grpcpp.h>
 #include "replicate.grpc.pb.h"
@@ -34,14 +35,20 @@ bool isMaster = false;
 crow::SimpleApp app;
 size_t id_count = 0;
 
-//std::map<uint64_t, std::string> messages;
-std::vector<crow::json::wvalue> messages;
+std::vector<std::tuple<int64_t, crow::json::wvalue>> messages;
 
+int saveMessage(std::string message, size_t id)
+{
+    LOG_DEBUG << "saveMessage '" << message << "' with id: " ;
+//TODO: make threadsafe -- iter2 (multithreaded http server)
+    messages.push_back(std::tuple<int64_t, crow::json::wvalue>(id, message));
+    return 0;
+}
 
 class ReplicateServiceImpl final : public ReplicateService::Service {
     Status appendMessage(ServerContext* context, const MessageItem* message, ReplicateResponce* response) override {
         LOG_DEBUG << "replicating message: '" << message->text() << "' with id: " << message->id();
-        messages.push_back(message->text());
+        saveMessage(message->text(), message->id());
         response->set_res(0);
         return Status::OK;
     }
@@ -103,14 +110,6 @@ void replicateMessage(std::string message)
     return;
 }
 
-int saveMessage(std::string message, size_t id)
-{
-    LOG_DEBUG << "saveMessage '" << message << "' with id: " ;
-//    messages.insert(std::pair<uint64_t,std::string>(id_count, message));
-//TODO: make threadsafe
-    messages.push_back(message);
-    return 0;
-}
 
 void replicateMessageRPC(const std::string& message, const size_t id) {
     std::string slave_address{"localhost:"};
@@ -124,7 +123,15 @@ void startHttpServer(bool isMaster)
 {
     CROW_ROUTE(app, "/messages")
         .methods("GET"_method)([](const crow::request& req) {
-            crow::json::wvalue x = crow::json::wvalue::list(messages);
+            std::vector<crow::json::wvalue> msgList;
+            size_t prevId = 0;
+            for (auto it = messages.begin(); it != messages.end(); ++it) {
+                if (std::get<0>(*it)-1 != prevId)
+                    break;
+                prevId++;
+                msgList.push_back(std::get<1>(*it));
+             }
+            crow::json::wvalue x = crow::json::wvalue::list(msgList);
             return x;
     });
     
@@ -144,7 +151,7 @@ void startHttpServer(bool isMaster)
                 LOG_DEBUG << "received POST with message " << x["message"].s();
 //TODO: id_count make atomic, static, not global,...
                 size_t local_id = ++id_count;
-                saveMessage(x["message"].s(), ++id_count);
+                saveMessage(x["message"].s(), local_id);
 //TODO: send rpc in separate threads if confirmed
                 replicateMessageRPC(x["message"].s(), local_id);
                 return crow::response{201};
