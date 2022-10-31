@@ -39,7 +39,17 @@ class Logger {
     std::string _fname;
 };
 
-//currently using crow logger. Can be changed if needed
+//currently using crow logger
+//TODO: rework debug define to have correct prefix
+#define ENABLE_DEBUG
+
+#ifdef ENABLE_DEBUG
+#define LOG_DEBUG                                                  \
+    crow::logger(crow::LogLevel::Info)
+#else
+#define LOG_DEBUG
+#endif
+
 #define LOG_CRITICAL                                                  \
     if (crow::logger::get_current_log_level() <= crow::LogLevel::Critical) \
     crow::logger(crow::LogLevel::Critical)
@@ -52,6 +62,4 @@ class Logger {
 #define LOG_INFO                                                  \
     if (crow::logger::get_current_log_level() <= crow::LogLevel::Info) \
     crow::logger(crow::LogLevel::Info)
-#define LOG_DEBUG                                                  \
-    if (crow::logger::get_current_log_level() <= crow::LogLevel::Debug) \
-    crow::logger(crow::LogLevel::Debug)
+
