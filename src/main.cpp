@@ -154,7 +154,8 @@ void startHttpServer(bool isMaster)
     }
     
     uint64_t port = isMaster ? MASTER_HTTP_PORT : SLAVE_HTTP_PORT;
-    app.port(port).multithreaded().run();
+//Currently HTTP server is running as singlethread to simplyfy implementation. Will be reworked as multithreaded in 2nd iteration of the lab
+    app.port(port).concurrency(1).run();
 }
 
 int main(int argc, const char * argv[]) {
