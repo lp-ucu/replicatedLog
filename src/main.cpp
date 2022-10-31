@@ -118,7 +118,7 @@ void replicateMessageRPC(const std::string& message, const int64_t id) {
     slave_address.append(SLAVE_RPC_PORT);
     ReplicatedLogMaster master{grpc::CreateChannel(slave_address, grpc::InsecureChannelCredentials())};
     int64_t res = master.appendMessage(id, message);
-    LOG_DEBUG << "Response from slave: ";
+    LOG_DEBUG << "Response from slave: " << res;
 }
 
 void startHttpServer(bool isMaster)
