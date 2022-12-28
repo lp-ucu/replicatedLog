@@ -150,13 +150,18 @@ void startHttpServer(bool isMaster)
                 auto x = crow::json::load(req.body);
                 
                 if (!x)
-                    return crow::response(400);
-                else if (!x.has("message"))
-                    return crow::response(400);
+                    return crow::response(400, "Request body is missing");
+                else if (!x.has("message") || !x.has("w"))
+                    return crow::response(400, "'message' or 'w' parameter is missing");
+                else if (x["w"].u() <= 0 || x["w"].u() > 3)
+                    return crow::response(400, "Bad write concern parameter. Allowed values: 1,2,3");
 
-                LOG_DEBUG << "received POST with message " << x["message"].s();
 //TODO: id_count make, static, not global,...
                 size_t local_id = ++id_count;
+                size_t w_concern = x["w"].u();
+
+                LOG_DEBUG << "received POST with message " << x["message"].s() << " and wite concern: " << w_concern;
+
                 saveMessage(x["message"].s(), local_id);
 //TODO: send rpc in separate threads if confirmed
                 replicateMessageRPC(x["message"].s(), local_id);
