@@ -12,6 +12,7 @@
 
 #include <grpcpp/grpcpp.h>
 #include "replicate.grpc.pb.h"
+#include "health.grpc.pb.h"
 
 #include "crow_all.h" //http server
 #include "Logger.hpp"
@@ -31,6 +32,10 @@ using grpc::ServerContext;
 using replicatedlog::ReplicateService;
 using replicatedlog::ReplicateResponce;
 using replicatedlog::MessageItem;
+
+using grpc::health::v1::Health;
+using grpc::health::v1::HealthCheckRequest;
+using grpc::health::v1::HealthCheckResponse;
 
 bool isMaster = false;
 crow::SimpleApp app;
@@ -60,12 +65,16 @@ class ReplicateServiceImpl final : public ReplicateService::Service {
     }
 };
 
-void runReplicateService(bool isMaster, const std::string port) {
+void runReplicateService(bool isMaster, const std::string port, const grpc::string healthy_service_name) {
     if (isMaster)
         return;
     
     std::string server_address{"localhost:"};
     server_address.append(port);
+
+    // Enable native grpc health check
+    grpc::EnableDefaultHealthCheckService(true);
+
     ReplicateServiceImpl service;
     
     // Build server
@@ -74,8 +83,12 @@ void runReplicateService(bool isMaster, const std::string port) {
     builder.RegisterService(&service);
     std::unique_ptr<Server> server{builder.BuildAndStart()};
     
+    // Setup health service
+    grpc::HealthCheckServiceInterface* health_service = server->GetHealthCheckService();
+    health_service->SetServingStatus(healthy_service_name, true);
+
     // Run server
-    LOG_INFO << "replicate service is listening on " << server_address << ":" << port;
+    LOG_INFO << "replicate service is listening on " << server_address;
     server->Wait();
 }
 
@@ -174,9 +187,29 @@ void startHttpServer(bool isMaster)
     app.port(port).multithreaded().run();
 }
 
+void sendHeartbeat(const grpc::string healthy_service_name, const std::string server_port)
+{
+    std::string server_address{"localhost:"};
+    server_address.append(server_port);
+
+    HealthCheckRequest request;
+    request.set_service(healthy_service_name);
+
+    HealthCheckResponse response;
+    ClientContext context;
+    std::shared_ptr<Channel> channel = CreateChannel(server_address, grpc::InsecureChannelCredentials());
+    std::unique_ptr<Health::Stub> hc_stub = grpc::health::v1::Health::NewStub(channel);
+    Status s = hc_stub->Check(&context, request, &response);
+    if (s.ok()) {
+        LOG_INFO << "service is OK";
+    }
+}
+
 int main(int argc, const char * argv[]) {
     //set filename if need to redirect all logs to file
     Logger logger("");
+    const grpc::string kHealthyService("healthy_service");
+
 
     LOG_INFO << "Starting replicated log process";
     if (argc == 1 || std::string(argv[1]) == "-m")
@@ -184,7 +217,13 @@ int main(int argc, const char * argv[]) {
     LOG_INFO << "Running as " << (isMaster ? "master" : "slave");
 
     std::thread httpThread(startHttpServer, isMaster);
-    std::thread serviceThread(runReplicateService, isMaster, SLAVE_RPC_PORT);
+    std::thread serviceThread(runReplicateService, isMaster, SLAVE_RPC_PORT, kHealthyService);
+
+    if (isMaster)
+    {
+        std::thread heartbeat(sendHeartbeat, kHealthyService, SLAVE_RPC_PORT);
+        heartbeat.join();
+    }
 
     serviceThread.join();
     httpThread.join();
