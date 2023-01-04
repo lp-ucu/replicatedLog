@@ -8,6 +8,7 @@
 #include <iostream>
 #include <thread>
 #include <tuple>
+#include <mutex>
 
 #include <grpcpp/grpcpp.h>
 #include "replicate.grpc.pb.h"
@@ -48,15 +49,20 @@ using replicatedlog::MessageItem;
 
 bool isMaster = false;
 crow::SimpleApp app;
-size_t id_count = 0;
+std::atomic<size_t> id_count{0};
+std::mutex mu;
 
-std::vector<std::tuple<int64_t, crow::json::wvalue>> messages;
+std::set<std::tuple<int64_t, std::string>> messages;
 
 int saveMessage(std::string message, size_t id)
 {
-    LOG_DEBUG << "saveMessage '" << message << "' with id: " ;
-//TODO: make threadsafe -- iter2 (multithreaded http server)
-    messages.push_back(std::tuple<int64_t, crow::json::wvalue>(id, message));
+    LOG_DEBUG << "saveMessage '" << message << "' with id: " << id;
+    {
+        std::lock_guard<std::mutex> lock(mu);
+        // idempotent operation
+        messages.insert(std::tuple<int64_t, std::string>(id, message));
+    }
+
     return 0;
 }
 
@@ -120,12 +126,15 @@ void startHttpServer(bool isMaster)
         .methods("GET"_method)([](const crow::request& req) {
             std::vector<crow::json::wvalue> msgList;
             size_t prevId = 0;
-            for (auto it = messages.begin(); it != messages.end(); ++it) {
-                if (std::get<0>(*it)-1 != prevId)
-                    break;
-                prevId++;
-                msgList.push_back(std::get<1>(*it));
-             }
+            {
+                std::lock_guard<std::mutex> lock(mu);
+                for (auto it = messages.begin(); it != messages.end(); ++it) {
+                    if (std::get<0>(*it)-1 != prevId)
+                        break;
+                    prevId++;
+                    msgList.push_back(std::get<1>(*it));
+                }
+            }
             crow::json::wvalue x = crow::json::wvalue::list(msgList);
             return x;
     });
@@ -136,18 +145,18 @@ void startHttpServer(bool isMaster)
                 auto x = crow::json::load(req.body);
 
                 if (!x)
-                    return crow::response(400);
-                // LOG_DEBUG << x.s();
-                std::cout<<x<<std::endl;
-                if (! x.has("message"))
-                    return crow::response(400);
-                
-                //          std::cout << "1 " << x["message"].s() << std::endl;
-                //          sleep(10);
-                //          std::cout << "2 " << x["message"].s() << std::endl;
-                LOG_DEBUG << "received POST with message " << x["message"].s();
-//TODO: id_count make atomic, static, not global,...
+                    return crow::response(400, "Request body is missing");
+                else if (!x.has("message") || !x.has("w"))
+                    return crow::response(400, "'message' or 'w' parameter is missing");
+                else if (x["w"].u() <= 0 || x["w"].u() > 3)
+                    return crow::response(400, "Bad write concern parameter. Allowed values: 1,2,3");
+
+//TODO: id_count make, static, not global,...
                 size_t local_id = ++id_count;
+                size_t w_concern = x["w"].u();
+
+                LOG_DEBUG << "received POST with message " << x["message"].s() << " and wite concern: " << w_concern;
+
                 saveMessage(x["message"].s(), local_id);
 //TODO: send rpc in separate threads if confirmed
                 // replicateMessageRPC(x["message"].s(), local_id);
@@ -188,8 +197,8 @@ void startHttpServer(bool isMaster)
     
     uint64_t port = params.http_port;
     
-    //Currently HTTP server is running as singlethread to simplyfy implementation. Will be reworked as multithreaded in 2nd iteration of the lab
-    app.port(port).concurrency(1).run();
+    // HTTP server will use std::thread::hardware_concurrency() number of threads threads
+    app.port(port).multithreaded().run();
 }
 
 int main(int argc, const char * argv[]) {
