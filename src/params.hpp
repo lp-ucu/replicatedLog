@@ -10,3 +10,5 @@ struct SParameters
     std::string rpc_port;
     std::vector<std::string> slaves;
 };
+
+bool parse_args(int argc, const char** argv, struct SParameters *params);

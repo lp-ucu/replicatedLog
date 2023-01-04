@@ -1,24 +1,16 @@
 #include "tclap/CmdLine.h"
 #include <iostream>
-#include "src/params.hpp"
+#include "params.hpp"
 // using TCLAP: https://tclap.sourceforge.net/manual.html
 
-#define REPLICATED_LOG_VERSION "0.9"
+#define REPLICATED_LOG_VERSION "1.0"
 // master:
-// ./main -m --hostname "$RL_HOSTNAME" --http-port "18080" --slave-hostname -S host1:2222 -S host2:3333"
+// .\build\src\Debug\main.exe -m --hostname 127.0.0.1 --grpc-port 50050 --http-port 18080 -S 127.0.0.1:50051
+
 // slave:
-// ./main -s --hostname "$RL_HOSTNAME" --http-port "28080" --grpc-port "$RPC_PORT"
+// .\build\src\Debug\main.exe -s --grpc-port 50051 --hostname 127.0.0.1 --http-port 28080
 
-
-// struct SParameters
-// {
-//     bool isMaster;
-//     std::string hostname;
-//     uint32_t http_port;
-//     std::vector<std::string> slaves;
-// } params = {0};
-
-bool parse_args(int argc, char **argv, struct SParameters *params)
+bool parse_args(int argc, const char **argv, struct SParameters *params)
 {
     // Wrap everything in a try block.  Do this every time,
     // because exceptions will be thrown for problems.
@@ -57,7 +49,6 @@ bool parse_args(int argc, char **argv, struct SParameters *params)
         {
 
             throw(TCLAP::CmdLineParseException("At least one slave must be specified!"));
-            // cmd._output->failure(cmd, TCLAP::CmdLineParseException("At least one secondary required!"));
         }
 
         if (!params->isMaster && !argRPCPort.isSet())
@@ -78,34 +69,8 @@ bool parse_args(int argc, char **argv, struct SParameters *params)
     }
     catch (TCLAP::ArgException &e) // catch any exceptions
     {
-        // std::cerr << "error: " << e.error() << " for arg " << e.argId() << std::endl;
         std::cerr << "Error: " << e.error() << std::endl;
         // usage()
-        
         return false;
     }
-    // return 0;
 }
-
-// int main(int argc, char **argv)
-// {
-//     SParameters params = {
-//         .isMaster=true,
-//         .hostname="",
-//         .http_port=80,
-//         .rpc_port="1234",
-//         .slaves={}
-//     };
-//     if (parse_args(argc, argv, &params))
-//     {
-
-//         std::cout << "Running as " << (params.isMaster ? "master" : "slave") << "; \"" << params.hostname << "\":" << params.http_port << ":" << params.rpc_port << std::endl;
-//         std::cout << "Secondaries:" << std::endl;
-//         for (std::string &slave : params.slaves)
-//         {
-//             std::cout << slave << std::endl;
-//         }
-//         return 0;
-//     }
-//     return -1;
-// }

@@ -14,6 +14,21 @@
 
 #include "crow_all.h" //http server
 #include "Logger.hpp"
+#include "params.hpp"
+
+SParameters params = {
+    true,
+    "",
+    80,
+    "1234",
+    {}
+};
+// SParameters params = { c++ 20
+//     .isMaster=true,
+//     .hostname="localhost",
+//     .http_port=80,
+//     .rpc_port="50051"
+//     };
 
 #define MASTER_HTTP_PORT 18080
 #define SLAVE_HTTP_PORT 28080
@@ -54,25 +69,6 @@ class ReplicateServiceImpl final : public ReplicateService::Service {
     }
 };
 
-void runReplicateService(bool isMaster, const std::string port) {
-    if (isMaster)
-        return;
-    
-    std::string server_address{"localhost:"};
-    server_address.append(port);
-    ReplicateServiceImpl service;
-    
-    // Build server
-    ServerBuilder builder;
-    builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
-    builder.RegisterService(&service);
-    std::unique_ptr<Server> server{builder.BuildAndStart()};
-    
-    // Run server
-    LOG_INFO << "replicate service is listening on " << server_address << ":" << port;
-    server->Wait();
-}
-
 class ReplicatedLogMaster {
 public:
     ReplicatedLogMaster(std::shared_ptr<Channel> channel) :
@@ -110,13 +106,12 @@ void replicateMessage(std::string message)
     return;
 }
 
-
-void replicateMessageRPC(const std::string& message, const size_t id) {
-    std::string slave_address{"localhost:"};
-    slave_address.append(SLAVE_RPC_PORT);
+std::vector<int64_t> results;
+void replicateMessageRPC(const std::string& message, const size_t id, const std::string& slave_address, int i) {
     ReplicatedLogMaster master{grpc::CreateChannel(slave_address, grpc::InsecureChannelCredentials())};
     int64_t res = master.appendMessage(id, message);
     LOG_DEBUG << "Response from slave: " << res;
+    results[i] = res;
 }
 
 void startHttpServer(bool isMaster)
@@ -139,10 +134,12 @@ void startHttpServer(bool isMaster)
         CROW_ROUTE(app, "/message")
             .methods("POST"_method)([](const crow::request& req) {
                 auto x = crow::json::load(req.body);
-                
+
                 if (!x)
                     return crow::response(400);
-                else if (!x.has("message"))
+                // LOG_DEBUG << x.s();
+                std::cout<<x<<std::endl;
+                if (! x.has("message"))
                     return crow::response(400);
                 
                 //          std::cout << "1 " << x["message"].s() << std::endl;
@@ -153,31 +150,80 @@ void startHttpServer(bool isMaster)
                 size_t local_id = ++id_count;
                 saveMessage(x["message"].s(), local_id);
 //TODO: send rpc in separate threads if confirmed
-                replicateMessageRPC(x["message"].s(), local_id);
-                return crow::response{201};
-            });
+                // replicateMessageRPC(x["message"].s(), local_id);
+                // std::vector<std::tuple<std::thread, int>> replicate_threads;
+
+                // std::pair<std::thread, int>
+                std::vector<std::thread> replicate_threads;
+                // std::vector<int64_t> results;
+
+                // for(std::string& slave:params.slaves)
+                for(int i = 0; i < params.slaves.size(); i++)
+                {   
+                    results.push_back(0);                       
+                    replicate_threads.push_back(std::thread(replicateMessageRPC, x["message"].s(), local_id, params.slaves[i], i));
+                }
+                // replicate_threads.push_back(std::pair(std::thread(replicateMessageRPC, x["message"].s(),local_id, slave), 0));
+
+                bool ok = true;
+                // for(std::thread& repl_thr:replicate_threads)
+                for(int i = 0; i < params.slaves.size(); i++)
+                {
+                    replicate_threads[i].join();
+                    std::cout<<results[i]<<std::endl;
+                    if(results[i] != 0)
+                    {
+                        ok = false;
+                    }
+                }
+                if(ok)
+                {
+                    return crow::response{201};
+                }
+                else
+                {
+                    return crow::response{500};
+                } });
     }
     
-    uint64_t port = isMaster ? MASTER_HTTP_PORT : SLAVE_HTTP_PORT;
-//Currently HTTP server is running as singlethread to simplyfy implementation. Will be reworked as multithreaded in 2nd iteration of the lab
+    uint64_t port = params.http_port;
+    
+    //Currently HTTP server is running as singlethread to simplyfy implementation. Will be reworked as multithreaded in 2nd iteration of the lab
     app.port(port).concurrency(1).run();
 }
 
 int main(int argc, const char * argv[]) {
-    //set filename if need to redirect all logs to file
-    Logger logger("");
-
     LOG_INFO << "Starting replicated log process";
-    if (argc == 1 || std::string(argv[1]) == "-m")
-        isMaster = true;
-    LOG_INFO << "Running as " << (isMaster ? "master" : "slave");
+    //set filename if need to redirect all logs to file
+    if (!parse_args(argc, argv, &params))
+    {
+        return -1;
+    }
 
-    std::thread httpThread(startHttpServer, isMaster);
-    std::thread serviceThread(runReplicateService, isMaster, SLAVE_RPC_PORT);
+    LOG_INFO << "Running as " << (params.isMaster ? "master" : "slave");
 
-    serviceThread.join();
-    httpThread.join();
-
+    std::thread httpThread(startHttpServer, params.isMaster);
+    if(!params.isMaster)
+    {
+        // std::thread serviceThread(runReplicateService, params.hostname, params.rpc_port);
+        std::string server_address{params.hostname};
+        server_address.append(":").append(params.rpc_port);
+        ReplicateServiceImpl service;
+        
+        // Build server
+        ServerBuilder builder;
+        builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
+        builder.RegisterService(&service);
+        // Run server
+        std::unique_ptr<Server> replicate_server{builder.BuildAndStart()};
+        LOG_INFO << "replicate service is listening on " << server_address;
+        // Wait for httpThread to exit here so that replicate_server is not destroyed
+        httpThread.join();
+    }
+    else
+    {
+        httpThread.join();
+    }
 //TODO: dockerfile, docker composer
 //TODO: refactor code to use classes
     return 0;
