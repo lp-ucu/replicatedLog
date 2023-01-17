@@ -5,7 +5,7 @@
 
 #define REPLICATED_LOG_VERSION "1.0"
 // master:
-// .\build\src\Debug\main.exe -m --hostname 127.0.0.1 --grpc-port 50050 --http-port 18080 -S 127.0.0.1:50051
+// .\build\src\Debug\main.exe -m --hostname 127.0.0.1 --grpc-port 50050 --http-port 18080 -S 127.0.0.1:50051 -S 127.0.0.1:50052
 
 // slave:
 // .\build\src\Debug\main.exe -s --grpc-port 50051 --hostname 127.0.0.1 --http-port 28080

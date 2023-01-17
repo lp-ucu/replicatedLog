@@ -16,20 +16,11 @@
 #include "crow_all.h" //http server
 #include "Logger.hpp"
 #include "params.hpp"
+#include "grpc_request.hpp"
 
-SParameters params = {
-    true,
-    "",
-    80,
-    "1234",
-    {}
-};
-// SParameters params = { c++ 20
-//     .isMaster=true,
-//     .hostname="localhost",
-//     .http_port=80,
-//     .rpc_port="50051"
-//     };
+
+
+SParameters params = {0};
 
 #define MASTER_HTTP_PORT 18080
 #define SLAVE_HTTP_PORT 28080
@@ -75,51 +66,6 @@ class ReplicateServiceImpl final : public ReplicateService::Service {
     }
 };
 
-class ReplicatedLogMaster {
-public:
-    ReplicatedLogMaster(std::shared_ptr<Channel> channel) :
-    _stub{ReplicateService::NewStub(channel)} {}
-
-    int64_t appendMessage(const size_t id, const std::string& text) {
-        // Prepare request
-        MessageItem message;
-        message.set_id(id);
-        message.set_text(text);
-
-        // Send request
-        ReplicateResponce response;
-        ClientContext context;
-        Status status;
-        status = _stub->appendMessage(&context, message, &response);
-
-        // Handle response
-        if (status.ok()) {
-            LOG_DEBUG << "message '" << text << "' is succefully replicated";
-            return response.res();
-        } else {
-            LOG_ERROR << status.error_code() << ": " << status.error_message();
-            return -1;
-        }
-    }
-
-private:
-    std::unique_ptr<ReplicateService::Stub> _stub;
-};
-
-void replicateMessage(std::string message)
-{
-    LOG_INFO << "replicateMessage " << message;
-    return;
-}
-
-std::vector<int64_t> results;
-void replicateMessageRPC(const std::string& message, const size_t id, const std::string& slave_address, int i) {
-    ReplicatedLogMaster master{grpc::CreateChannel(slave_address, grpc::InsecureChannelCredentials())};
-    int64_t res = master.appendMessage(id, message);
-    LOG_DEBUG << "Response from slave: " << res;
-    results[i] = res;
-}
-
 void startHttpServer(bool isMaster)
 {
     CROW_ROUTE(app, "/messages")
@@ -156,35 +102,10 @@ void startHttpServer(bool isMaster)
                 size_t w_concern = x["w"].u();
 
                 LOG_DEBUG << "received POST with message " << x["message"].s() << " and wite concern: " << w_concern;
-
                 saveMessage(x["message"].s(), local_id);
-//TODO: send rpc in separate threads if confirmed
-                // replicateMessageRPC(x["message"].s(), local_id);
-                // std::vector<std::tuple<std::thread, int>> replicate_threads;
 
-                // std::pair<std::thread, int>
-                std::vector<std::thread> replicate_threads;
-                // std::vector<int64_t> results;
+                bool ok = ReplicateMessage(local_id, x["message"].s(), params.slaves, w_concern);
 
-                // for(std::string& slave:params.slaves)
-                for(int i = 0; i < params.slaves.size(); i++)
-                {   
-                    results.push_back(0);                       
-                    replicate_threads.push_back(std::thread(replicateMessageRPC, x["message"].s(), local_id, params.slaves[i], i));
-                }
-                // replicate_threads.push_back(std::pair(std::thread(replicateMessageRPC, x["message"].s(),local_id, slave), 0));
-
-                bool ok = true;
-                // for(std::thread& repl_thr:replicate_threads)
-                for(int i = 0; i < params.slaves.size(); i++)
-                {
-                    replicate_threads[i].join();
-                    std::cout<<results[i]<<std::endl;
-                    if(results[i] != 0)
-                    {
-                        ok = false;
-                    }
-                }
                 if(ok)
                 {
                     return crow::response{201};

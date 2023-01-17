@@ -27,7 +27,7 @@ target_link_libraries(replicate_grpc_proto
         ${_GRPC_GRPCPP})
 
 foreach(_target main)
-    add_executable(${_target} "${_target}.cpp" "params.cpp")
+    add_executable(${_target} "${_target}.cpp" "params.cpp" "grpc_request.cpp")
     target_include_directories(${_target} PUBLIC ".")
     
     target_link_libraries(${_target}
