@@ -12,10 +12,11 @@
 
 #include <grpcpp/grpcpp.h>
 #include "replicate.grpc.pb.h"
-#include "health.grpc.pb.h"
+// #include "health.grpc.pb.h"
 
 #include "crow_all.h" //http server
 #include "Logger.hpp"
+#include "HealthMonitor.h"
 
 #define MASTER_HTTP_PORT 18080
 #define SLAVE_HTTP_PORT 28080
@@ -33,9 +34,9 @@ using replicatedlog::ReplicateService;
 using replicatedlog::ReplicateResponce;
 using replicatedlog::MessageItem;
 
-using grpc::health::v1::Health;
-using grpc::health::v1::HealthCheckRequest;
-using grpc::health::v1::HealthCheckResponse;
+//using grpc::health::v1::Health;
+//using grpc::health::v1::HealthCheckRequest;
+//using grpc::health::v1::HealthCheckResponse;
 
 bool isMaster = false;
 crow::SimpleApp app;
@@ -187,23 +188,6 @@ void startHttpServer(bool isMaster)
     app.port(port).multithreaded().run();
 }
 
-void sendHeartbeat(const grpc::string healthy_service_name, const std::string server_port)
-{
-    std::string server_address{"localhost:"};
-    server_address.append(server_port);
-
-    HealthCheckRequest request;
-    request.set_service(healthy_service_name);
-
-    HealthCheckResponse response;
-    ClientContext context;
-    std::shared_ptr<Channel> channel = CreateChannel(server_address, grpc::InsecureChannelCredentials());
-    std::unique_ptr<Health::Stub> hc_stub = grpc::health::v1::Health::NewStub(channel);
-    Status s = hc_stub->Check(&context, request, &response);
-    if (s.ok()) {
-        LOG_INFO << "service is OK";
-    }
-}
 
 int main(int argc, const char * argv[]) {
     //set filename if need to redirect all logs to file
@@ -216,15 +200,21 @@ int main(int argc, const char * argv[]) {
         isMaster = true;
     LOG_INFO << "Running as " << (isMaster ? "master" : "slave");
 
+    std::vector<std::string> hosts{"localhost:2510"};
+    
     std::thread httpThread(startHttpServer, isMaster);
     std::thread serviceThread(runReplicateService, isMaster, SLAVE_RPC_PORT, kHealthyService);
+    //std::thread healthMonitorThread(monitor.startMonitor);
 
     if (isMaster)
     {
-        std::thread heartbeat(sendHeartbeat, kHealthyService, SLAVE_RPC_PORT);
-        heartbeat.join();
-    }
+ //       std::thread heartbeat(sendHeartbeat, kHealthyService, SLAVE_RPC_PORT);
+ //       heartbeat.join();
+        HealthMonitor monitor(hosts, kHealthyService);
+        monitor.startMonitor();
 
+    }
+    
     serviceThread.join();
     httpThread.join();
 
