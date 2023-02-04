@@ -17,41 +17,39 @@
 
 #include "health.grpc.pb.h"
 
-
-struct Secondary
-{
-    std::string host;
-    bool active;
-};
-
 class HealthMonitor
 {
 public:
-    HealthMonitor(const std::vector<std::string> secondaries, const std::string health_service_name, const uint64_t timout = 5);
+    static HealthMonitor& getInstance();
     
-//    void registerSecondary(const std::string address);
+    HealthMonitor(HealthMonitor const&) = delete;
+    void operator=(HealthMonitor const&) = delete;
+    
+    void init(const std::vector<std::string> secondaries, const std::string health_service_name, const uint64_t timeout = 20);
     void startMonitor();
     void stopMonitor();
     bool isRunning();
+    void setCallback(std::function<void(int)> callback); 
     
-    std::vector<Secondary> getOverallStatus();
+    std::map<std::string, bool> getOverallStatus();
     bool getStatus(const std::string secondary_host);
 
 private:
+    HealthMonitor();
+
     std::mutex mutex_;
     std::condition_variable cv_;
     std::thread thread_;
     bool running_;
-    uint64_t timout_;
+    uint64_t timeout_;
     std::string health_service_name_;
-    std::vector<Secondary> secondaries_;
+    
+    std::map<std::string, bool> secondaries_;
     
     std::function<void(int)> callback_;
     
     void monitorSecondaries();
     void sendHeartbeat();
-
-
 };
 
 #endif /* HealthMonitor_h */

@@ -21,22 +21,34 @@ using grpc::health::v1::Health;
 using grpc::health::v1::HealthCheckRequest;
 using grpc::health::v1::HealthCheckResponse;
 
-HealthMonitor::HealthMonitor(const std::vector<std::string> secondaries, const std::string health_service_name, const uint64_t timeout):
-    health_service_name_(health_service_name),
-    timout_(timeout),
+HealthMonitor::HealthMonitor():
     running_(false)
 {
+}
+
+HealthMonitor& HealthMonitor::getInstance() {
+    static HealthMonitor instance;
+    return instance;
+}
+
+void HealthMonitor::init(const std::vector<std::string> secondaries, const std::string health_service_name, const uint64_t timeout)
+{
+    health_service_name_ = health_service_name;
+    timeout_ = timeout;
+    
     for (std::string host : secondaries)
     {
-        Secondary sec;
-        sec.host = host;
-        sec.active = false;
-        secondaries_.push_back(sec);
+        secondaries_.insert({host, false});
     }
 }
 
 void HealthMonitor::startMonitor()
 {
+    if (secondaries_.size() == 0)
+    {
+        LOG_ERROR << "list of monitored hosts is empty, cannot start health checking";
+        return;
+    }
     running_ = true;
     auto shared_this = std::shared_ptr<HealthMonitor>(this);
     thread_ = std::thread([shared_this]() { shared_this->monitorSecondaries(); });
@@ -45,12 +57,16 @@ void HealthMonitor::startMonitor()
     thread_.join(); // TODO: not possible to stop the timer!!
 }
 
+void HealthMonitor::setCallback(std::function<void(int)> callback) {
+    callback_ = callback;
+ }
+
 void HealthMonitor::monitorSecondaries()
 {
     while (running_)
     {
         LOG_INFO << "monitorSecondaries";
-        std::this_thread::sleep_for(std::chrono::seconds(20));
+        std::this_thread::sleep_for(std::chrono::seconds(timeout_));
         // TODO: mutex!!!
         sendHeartbeat();
     }
@@ -61,26 +77,26 @@ void HealthMonitor::sendHeartbeat()
     // TODO: double check requirements.
     // with current implementation, after adding arificial sleep in ReplicateService
     // health check will be OK
-    for (Secondary secondary : secondaries_)
+    for (auto& secondary : secondaries_)
     {
         HealthCheckRequest request;
         request.set_service(health_service_name_);
         
-        LOG_INFO << "sending heartbeat to " << secondary.host;
+        LOG_INFO << "sending heartbeat to " << secondary.first;
         
         HealthCheckResponse response;
         ClientContext context;
-        std::shared_ptr<Channel> channel = CreateChannel(secondary.host, grpc::InsecureChannelCredentials());
+        std::shared_ptr<Channel> channel = CreateChannel(secondary.first, grpc::InsecureChannelCredentials());
         std::unique_ptr<Health::Stub> hc_stub = grpc::health::v1::Health::NewStub(channel);
         Status s = hc_stub->Check(&context, request, &response);
         if (s.ok()) {
-            LOG_INFO << "service " << secondary.host << " is OK";
-            secondary.active = true;
+            LOG_INFO << "service " << secondary.first << " is OK";
+            secondary.second = true;
         }
         else
         {
-            LOG_INFO << "service " << secondary.host << " is not responding";
-            secondary.active = false;
+            LOG_INFO << "service " << secondary.first << " is not responding";
+            secondary.second = false;
         }
     }
 }
@@ -96,16 +112,16 @@ bool HealthMonitor::isRunning()
     return running_;
 }
 
-std::vector<Secondary> HealthMonitor::getOverallStatus()
+std::map<std::string, bool> HealthMonitor::getOverallStatus()
 {
     return secondaries_;
 }
 bool HealthMonitor::getStatus(const std::string secondary_host)
 {
-    for (Secondary secondary : secondaries_)
+    for (auto& secondary : secondaries_)
     {
-        if (secondary.host == secondary_host)
-            return secondary.active;
+        if (secondary.first == secondary_host)
+            return secondary.second;
     }
     return false;
 }

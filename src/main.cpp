@@ -181,6 +181,23 @@ void startHttpServer(bool isMaster)
                 replicateMessageRPC(x["message"].s(), local_id);
                 return crow::response{201};
             });
+        CROW_ROUTE(app, "/health")
+            .methods("GET"_method)([](const crow::request& req) {
+                crow::json::wvalue x;
+
+                std::vector<std::string> hosts{"localhost:2510"};
+                const grpc::string kHealthyService("healthy_service");
+
+                HealthMonitor& monitor = HealthMonitor::getInstance();
+                
+                for (auto secondary : monitor.getOverallStatus())
+                {
+                    x[secondary.first] = secondary.second;
+                }
+
+                return x;
+            });
+
     }
     
     uint64_t port = isMaster ? MASTER_HTTP_PORT : SLAVE_HTTP_PORT;
@@ -204,15 +221,12 @@ int main(int argc, const char * argv[]) {
     
     std::thread httpThread(startHttpServer, isMaster);
     std::thread serviceThread(runReplicateService, isMaster, SLAVE_RPC_PORT, kHealthyService);
-    //std::thread healthMonitorThread(monitor.startMonitor);
 
     if (isMaster)
     {
- //       std::thread heartbeat(sendHeartbeat, kHealthyService, SLAVE_RPC_PORT);
- //       heartbeat.join();
-        HealthMonitor monitor(hosts, kHealthyService);
+        HealthMonitor& monitor = HealthMonitor::getInstance();
+        monitor.init(hosts, kHealthyService);
         monitor.startMonitor();
-
     }
     
     serviceThread.join();
