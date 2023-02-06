@@ -29,7 +29,8 @@ public:
     void startMonitor();
     void stopMonitor();
     bool isRunning();
-    void setCallback(std::function<void(int)> callback); 
+    void setCallback(std::function<void(std::pair<std::string, bool> secondary)> callback);
+    void waitForStatusChange();
     
     std::map<std::string, bool> getOverallStatus();
     bool getStatus(const std::string secondary_host);
@@ -40,13 +41,15 @@ private:
     std::mutex mutex_;
     std::condition_variable cv_;
     std::thread thread_;
+    bool condition_changed_; //atomic?
     bool running_;
     uint64_t timeout_;
     std::string health_service_name_;
     
     std::map<std::string, bool> secondaries_;
+    std::map<std::string, bool> sec_changed_;
     
-    std::function<void(int)> callback_;
+    std::function<void(std::pair<std::string, bool>)> callback_;
     
     void monitorSecondaries();
     void sendHeartbeat();

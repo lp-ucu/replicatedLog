@@ -22,7 +22,8 @@ using grpc::health::v1::HealthCheckRequest;
 using grpc::health::v1::HealthCheckResponse;
 
 HealthMonitor::HealthMonitor():
-    running_(false)
+    running_(false),
+    condition_changed_(false)
 {
 }
 
@@ -57,7 +58,7 @@ void HealthMonitor::startMonitor()
     thread_.join(); // TODO: not possible to stop the timer!!
 }
 
-void HealthMonitor::setCallback(std::function<void(int)> callback) {
+void HealthMonitor::setCallback(std::function<void(std::pair<std::string, bool>)> callback) {
     callback_ = callback;
  }
 
@@ -65,9 +66,7 @@ void HealthMonitor::monitorSecondaries()
 {
     while (running_)
     {
-        LOG_INFO << "monitorSecondaries";
         std::this_thread::sleep_for(std::chrono::seconds(timeout_));
-        // TODO: mutex!!!
         sendHeartbeat();
     }
 }
@@ -77,6 +76,7 @@ void HealthMonitor::sendHeartbeat()
     // TODO: double check requirements.
     // with current implementation, after adding arificial sleep in ReplicateService
     // health check will be OK
+    std::unique_lock<std::mutex> lock(mutex_);
     for (auto& secondary : secondaries_)
     {
         HealthCheckRequest request;
@@ -89,6 +89,8 @@ void HealthMonitor::sendHeartbeat()
         std::shared_ptr<Channel> channel = CreateChannel(secondary.first, grpc::InsecureChannelCredentials());
         std::unique_ptr<Health::Stub> hc_stub = grpc::health::v1::Health::NewStub(channel);
         Status s = hc_stub->Check(&context, request, &response);
+        
+        bool prevStatus = secondary.second;
         if (s.ok()) {
             LOG_INFO << "service " << secondary.first << " is OK";
             secondary.second = true;
@@ -98,7 +100,29 @@ void HealthMonitor::sendHeartbeat()
             LOG_INFO << "service " << secondary.first << " is not responding";
             secondary.second = false;
         }
+        
+        if (prevStatus != secondary.second)
+        {
+            LOG_INFO << "status has changed";
+            condition_changed_ = true;
+            sec_changed_.insert(secondary);
+            cv_.notify_one();
+        }
     }
+}
+
+void HealthMonitor::waitForStatusChange() {
+    std::unique_lock<std::mutex> lock(mutex_);
+    cv_.wait(lock, [this] { return condition_changed_; });
+    for (auto secondary : sec_changed_)
+    {
+        LOG_INFO << "waitForStatusChange: status changed for " << secondary.first;
+        if (callback_) {
+            callback_(secondary);
+        }
+    }
+    sec_changed_.clear();
+    condition_changed_ = false;
 }
 
 void HealthMonitor::stopMonitor()
@@ -114,10 +138,12 @@ bool HealthMonitor::isRunning()
 
 std::map<std::string, bool> HealthMonitor::getOverallStatus()
 {
+    std::unique_lock<std::mutex> lock(mutex_);
     return secondaries_;
 }
 bool HealthMonitor::getStatus(const std::string secondary_host)
 {
+    std::unique_lock<std::mutex> lock(mutex_);
     for (auto& secondary : secondaries_)
     {
         if (secondary.first == secondary_host)

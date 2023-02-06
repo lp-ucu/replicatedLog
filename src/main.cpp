@@ -226,9 +226,25 @@ int main(int argc, const char * argv[]) {
     {
         HealthMonitor& monitor = HealthMonitor::getInstance();
         monitor.init(hosts, kHealthyService);
+        monitor.setCallback([](std::pair<std::string, bool> secondary) {
+            LOG_INFO << "Status of secondary " << secondary.first << " has changed to " << (secondary.second ? "running" : "not available");
+          });
+        
+        std::thread healthStatusThread([&monitor] {
+            while (true)
+            {
+                LOG_INFO << "healthStatusThread started..";
+                monitor.waitForStatusChange();
+                LOG_INFO << "healthStatusThread executed..";
+            }
+        });
+
         monitor.startMonitor();
+                
+        healthStatusThread.join();
     }
     
+
     serviceThread.join();
     httpThread.join();
 
