@@ -10,6 +10,7 @@
 
 #include <grpcpp/grpcpp.h>
 #include "health.grpc.pb.h"
+#include "replicate.grpc.pb.h"
 
 using grpc::ClientContext;
 using grpc::Status;
@@ -18,6 +19,39 @@ using grpc::Channel;
 using grpc::health::v1::Health;
 using grpc::health::v1::HealthCheckRequest;
 using grpc::health::v1::HealthCheckResponse;
+
+using replicatedlog::ReplicateService;
+using replicatedlog::LastMessageId;
+using replicatedlog::ReplicateParamStub;
+
+class IdChecker {
+public:
+    IdChecker(std::shared_ptr<Channel> channel) :
+    _stub{ReplicateService::NewStub(channel)} {}
+
+    int64_t getId() {
+        // Prepare request
+        ReplicateParamStub stub;
+
+        // Send request
+        LastMessageId response;
+        ClientContext context;
+        Status status;
+        status = _stub->getLastMessageId(&context, stub, &response);
+
+        // Handle response
+        if (status.ok()) {
+            LOG_DEBUG << "Service is alive! Last message id: '" << response.id();
+            return response.id();
+        } else {
+            LOG_ERROR << status.error_code() << ": " << status.error_message();
+            return -1;
+        }
+    }
+
+private:
+    std::unique_ptr<ReplicateService::Stub> _stub;
+};
 
 HealthMonitor::HealthMonitor():
 running_(false),
@@ -68,6 +102,12 @@ void HealthMonitor::monitorSecondaries()
     }
 }
 
+int64_t HealthMonitor::getLastId(const std::string& secondary) {
+    IdChecker checker{grpc::CreateChannel(secondary, grpc::InsecureChannelCredentials())};
+    int64_t id = checker.getId();
+    return id;
+}
+
 void HealthMonitor::sendHeartbeat()
 {
     // TODO: double check requirements.
@@ -86,6 +126,9 @@ void HealthMonitor::sendHeartbeat()
         std::shared_ptr<Channel> channel = CreateChannel(secondary.first, grpc::InsecureChannelCredentials());
         std::unique_ptr<Health::Stub> hc_stub = grpc::health::v1::Health::NewStub(channel);
         Status s = hc_stub->Check(&context, request, &response);
+
+        int64_t last_id = getLastId(secondary.first);
+        LOG_INFO << "service " << secondary.first << " returned last message id: " << last_id;
 
         bool prevStatus = secondary.second;
         if (s.ok()) {

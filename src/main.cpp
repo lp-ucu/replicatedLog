@@ -38,6 +38,9 @@ using grpc::ServerContext;
 using replicatedlog::ReplicateService;
 using replicatedlog::ReplicateResponce;
 using replicatedlog::MessageItem;
+using replicatedlog::LastMessageId;
+using replicatedlog::ReplicateParamStub;
+
 
 bool isMaster = false;
 crow::SimpleApp app;
@@ -63,6 +66,19 @@ class ReplicateServiceImpl final : public ReplicateService::Service {
         LOG_DEBUG << "replicating message: '" << message->text() << "' with id: " << message->id();
         saveMessage(message->text(), message->id());
         response->set_res(0);
+        return Status::OK;
+    }
+
+    Status getLastMessageId(ServerContext* context, const ReplicateParamStub* param, LastMessageId* message) override {
+        LOG_DEBUG << "getLastMessageId: call";
+        if (messages.size())
+        {
+            message->set_id(std::get<0>(*messages.rbegin()));
+        }
+        else
+        {
+            message->set_id(0);
+        }
         return Status::OK;
     }
 };

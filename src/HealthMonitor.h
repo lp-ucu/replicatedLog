@@ -31,6 +31,7 @@ public:
     bool isRunning();
     void setCallback(std::function<void(std::pair<std::string, bool> secondary)> callback);
     void waitForStatusChange();
+    int64_t getLastId(const std::string& secondary);
 
     std::map<std::string, bool> getOverallStatus();
     bool getStatus(const std::string secondary_host);

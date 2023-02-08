@@ -11,6 +11,7 @@ package replicatedlog;
 
 service ReplicateService {
     rpc appendMessage(MessageItem) returns(ReplicateResponce) {}
+    rpc getLastMessageId(ReplicateParamStub) returns(LastMessageId) {}
 }
 
 message ReplicateResponce {
@@ -20,4 +21,12 @@ message ReplicateResponce {
 message MessageItem {
     int32 id = 1;
     string text = 2;
+}
+
+message LastMessageId {
+    int32 id = 1;
+}
+
+message ReplicateParamStub {
+    int32 id = 1;
 }
