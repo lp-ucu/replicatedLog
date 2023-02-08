@@ -6,7 +6,7 @@
 
 #include <grpcpp/grpcpp.h>
 #include "replicate.grpc.pb.h"
-
+#include "Logger.hpp"
 // #include "myproto/hello.grpc.pb.h"
 
 using grpc::Channel;
@@ -40,7 +40,8 @@ public:
     std::chrono::system_clock::time_point deadline = std::chrono::system_clock::now() + std::chrono::seconds(waitfor);
     context.set_deadline(deadline);
 
-    std::cout << "  Request to " << server;
+    // std::cout << "  Request to " << server;
+    LOG_INFO << "  Request to " << server;
     stub_->async()->appendMessage(&context, &request, &reply,
                                   [mu, cv, fail_count, success_count](Status s)
                                   {
@@ -53,12 +54,13 @@ public:
                                     }
                                     else
                                     {
-                                      std::cout << s.error_message() << std::endl;
+                                      // std::cout << s.error_message() << std::endl;
+                                      LOG_INFO <<"Request error:"<< s.error_message();
                                       (*fail_count)++;
                                     }
                                     cv->notify_one();
                                   });
-    std::cout << " sent" << std::endl;
+    LOG_INFO << "Request sent";
     return true;
   }
 
@@ -95,20 +97,20 @@ bool ReplicateMessage(int32_t id, const std::string &msg, const std::vector<std:
     std::unique_lock<std::mutex> lock(g_mu);
     while ((success_count < write_concern) && (success_count + fail_count < servers.size()))
     {
-      std::cout << "   wait " << success_count << " " << fail_count << std::endl;
+      // std::cout << "   wait " << success_count << " " << fail_count << std::endl;
       g_cv.wait(lock);
     }
   }
 
-  std::cout << "  Wait finished" << std::endl;
+  // std::cout << "  Wait finished" << std::endl;
 
   for (uint32_t i = 0; i < servers.size(); i++)
   {
-    std::cout << " res "<<i<<" :" << requests[i]->res() << std::endl;
+    LOG_INFO << "  Request returned:"<<i<<" :" << requests[i]->res();
     // TODO: TryCancel may not work
     requests[i]->context.TryCancel();
     delete requests[i];
   }
-  std::cout << " Result:"<< (success_count >= write_concern) << std::endl;
+  LOG_INFO << " Result:"<< (success_count >= write_concern);
   return success_count >= write_concern;
 }

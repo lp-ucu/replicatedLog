@@ -76,10 +76,8 @@ void HealthMonitor::startMonitor()
         return;
     }
     running_ = true;
-    auto shared_this = std::shared_ptr<HealthMonitor>(this);
-    thread_ = std::thread([shared_this]() { shared_this->monitorSecondaries(); });
 
-    thread_.join(); // TODO: not possible to stop the timer!!
+    thread_ = std::thread([&]() { monitorSecondaries(); });
 }
 
 void HealthMonitor::setCallback(std::function<void(std::pair<std::string, bool>)> callback) {
@@ -93,6 +91,7 @@ void HealthMonitor::monitorSecondaries()
         std::this_thread::sleep_for(std::chrono::seconds(timeout_));
         sendHeartbeat();
     }
+    LOG_INFO << "monitorSecondaries Stopped"; 
 }
 
 int64_t HealthMonitor::getLastId(const std::string& secondary) {
@@ -137,8 +136,12 @@ void HealthMonitor::sendHeartbeat()
 
 void HealthMonitor::waitForStatusChange() {
     std::unique_lock<std::mutex> lock(mutex_);
-    cv_.wait(lock, [this] { return condition_changed_; });
-    for (auto secondary : sec_changed_)
+
+    cv_.wait(lock, [this] { return (condition_changed_) || (!running_); });
+
+    if (!running_) return;
+    
+    for (auto& secondary : sec_changed_)
     {
         LOG_INFO << "waitForStatusChange: status changed for " << secondary.first;
         if (callback_) {
@@ -152,8 +155,13 @@ void HealthMonitor::waitForStatusChange() {
 void HealthMonitor::stopMonitor()
 {
     // TODO: need to fix, currently does not work
+    LOG_INFO << "stopMonitor"; 
+
     running_ = false;
+    cv_.notify_all();
+
     thread_.join();
+    LOG_INFO << "MonitorSecondares joined"; 
 }
 
 bool HealthMonitor::isRunning()

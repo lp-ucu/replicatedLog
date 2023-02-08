@@ -121,7 +121,7 @@ void startHttpServer(bool isMaster)
                 LOG_DEBUG << "received POST with message " << x["message"].s() << " and wite concern: " << w_concern;
                 saveMessage(x["message"].s(), local_id);
 
-                bool ok = ReplicateMessage(local_id, x["message"].s(), params.slaves, w_concern);
+                bool ok = ReplicateMessage(local_id, x["message"].s(), params.slaves, w_concern - 1);
 
                 if(ok)
                 {
@@ -190,24 +190,29 @@ int main(int argc, const char * argv[]) {
     else
     {
         HealthMonitor& monitor = HealthMonitor::getInstance();
-        monitor.init(params.slaves);
+        monitor.init(params.slaves, 5);
         monitor.setCallback([](std::pair<std::string, bool> secondary) {
             LOG_INFO << "Status of secondary " << secondary.first << " has changed to " << (secondary.second ? "running" : "not available");
           });
 
         std::thread healthStatusThread([&monitor] {
-            while (true)
+            while (monitor.isRunning())
             {
-                LOG_INFO << "healthStatusThread started..";
+                // LOG_INFO << "healthStatusThread started..";
                 monitor.waitForStatusChange();
-                LOG_INFO << "healthStatusThread executed..";
+                LOG_INFO << "healthStatusThread ok..";
             }
+            LOG_INFO << "healthStatusThread stopped..";
         });
 
         monitor.startMonitor();
 
-        healthStatusThread.join();
         httpThread.join();
+        LOG_INFO << "httpThread stopped..";
+
+        monitor.stopMonitor();
+
+        healthStatusThread.join();
     }
 //TODO: dockerfile, docker composer
 //TODO: refactor code to use classes

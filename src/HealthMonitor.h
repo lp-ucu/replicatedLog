@@ -15,6 +15,7 @@
 #include <condition_variable>
 #include <functional>
 #include <map>
+#include <vector>
 
 class HealthMonitor
 {
@@ -24,7 +25,7 @@ public:
     HealthMonitor(HealthMonitor const&) = delete;
     void operator=(HealthMonitor const&) = delete;
 
-    void init(const std::vector<std::string> secondaries, const uint64_t timeout = 20);
+    void init(const std::vector<std::string> secondaries, const uint64_t timeout = 5);
     void startMonitor();
     void stopMonitor();
     bool isRunning();
@@ -41,8 +42,8 @@ private:
     std::mutex mutex_;
     std::condition_variable cv_;
     std::thread thread_;
-    bool condition_changed_;
-    bool running_;
+    volatile bool condition_changed_;
+    volatile bool running_;
     uint64_t timeout_;
     std::string health_service_name_;
 
