@@ -12,7 +12,6 @@
 
 #include <grpcpp/grpcpp.h>
 #include "replicate.grpc.pb.h"
-// #include "health.grpc.pb.h"
 
 #include "crow_all.h" //http server
 #include "Logger.hpp"
@@ -33,10 +32,6 @@ using grpc::ServerContext;
 using replicatedlog::ReplicateService;
 using replicatedlog::ReplicateResponce;
 using replicatedlog::MessageItem;
-
-//using grpc::health::v1::Health;
-//using grpc::health::v1::HealthCheckRequest;
-//using grpc::health::v1::HealthCheckResponse;
 
 bool isMaster = false;
 crow::SimpleApp app;
@@ -243,7 +238,7 @@ int main(int argc, const char * argv[]) {
                 
         healthStatusThread.join();
     }
-    
+
 
     serviceThread.join();
     httpThread.join();

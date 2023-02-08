@@ -8,8 +8,6 @@
 #include "HealthMonitor.h"
 #include "Logger.hpp"
 
-#include <iostream>
-
 #include <grpcpp/grpcpp.h>
 #include "health.grpc.pb.h"
 
@@ -22,8 +20,8 @@ using grpc::health::v1::HealthCheckRequest;
 using grpc::health::v1::HealthCheckResponse;
 
 HealthMonitor::HealthMonitor():
-    running_(false),
-    condition_changed_(false)
+running_(false),
+condition_changed_(false)
 {
 }
 
@@ -54,13 +52,12 @@ void HealthMonitor::startMonitor()
     auto shared_this = std::shared_ptr<HealthMonitor>(this);
     thread_ = std::thread([shared_this]() { shared_this->monitorSecondaries(); });
 
-    //thread_ = std::thread(&HealthMonitor::monitorSecondaries, this);
     thread_.join(); // TODO: not possible to stop the timer!!
 }
 
 void HealthMonitor::setCallback(std::function<void(std::pair<std::string, bool>)> callback) {
     callback_ = callback;
- }
+}
 
 void HealthMonitor::monitorSecondaries()
 {
@@ -127,8 +124,9 @@ void HealthMonitor::waitForStatusChange() {
 
 void HealthMonitor::stopMonitor()
 {
-  running_ = false;
-  thread_.join();
+    // TODO: need to fix, currently does not work
+    running_ = false;
+    thread_.join();
 }
 
 bool HealthMonitor::isRunning()
@@ -141,6 +139,7 @@ std::map<std::string, bool> HealthMonitor::getOverallStatus()
     std::unique_lock<std::mutex> lock(mutex_);
     return secondaries_;
 }
+
 bool HealthMonitor::getStatus(const std::string secondary_host)
 {
     std::unique_lock<std::mutex> lock(mutex_);
@@ -151,5 +150,3 @@ bool HealthMonitor::getStatus(const std::string secondary_host)
     }
     return false;
 }
-
-
