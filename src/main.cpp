@@ -143,14 +143,11 @@ void startHttpServer(bool isMaster)
             .methods("GET"_method)([](const crow::request& req) {
                 crow::json::wvalue x;
 
-                std::vector<std::string> hosts{"localhost:2510"};
-                const grpc::string kHealthyService("healthy_service");
-
                 HealthMonitor& monitor = HealthMonitor::getInstance();
 
                 for (auto secondary : monitor.getOverallStatus())
                 {
-                    x[secondary.first] = secondary.second;
+                    x[secondary.hostname] = secondary.status;
                 }
 
                 return x;
@@ -198,8 +195,8 @@ int main(int argc, const char * argv[]) {
     {
         HealthMonitor& monitor = HealthMonitor::getInstance();
         monitor.init(params.slaves, 5);
-        monitor.setCallback([](std::pair<std::string, bool> secondary) {
-            LOG_INFO << "Status of secondary " << secondary.first << " has changed to " << (secondary.second ? "running" : "not available");
+        monitor.setCallback([](SecondaryStatus secondary) {
+            LOG_INFO << "Status of secondary " << secondary.hostname << " has changed to " << (secondary.status ? "running" : "not available") << " last id: " << secondary.last_id;
           });
 
         std::thread healthStatusThread([&monitor] {

@@ -64,7 +64,11 @@ void HealthMonitor::init(const std::vector<std::string> secondaries, const uint6
 
     for (std::string host : secondaries)
     {
-        secondaries_.insert({host, false});
+        SecondaryStatus secondary;
+        secondary.hostname = host;
+        secondary.status = false;
+        secondary.last_id = -1;
+        secondaries_.push_back(secondary);
     }
 }
 
@@ -80,7 +84,7 @@ void HealthMonitor::startMonitor()
     thread_ = std::thread([&]() { monitorSecondaries(); });
 }
 
-void HealthMonitor::setCallback(std::function<void(std::pair<std::string, bool>)> callback) {
+void HealthMonitor::setCallback(std::function<void(SecondaryStatus)> callback) {
     callback_ = callback;
 }
 
@@ -108,27 +112,27 @@ void HealthMonitor::sendHeartbeat()
     std::unique_lock<std::mutex> lock(mutex_);
     for (auto& secondary : secondaries_)
     {
-        LOG_INFO << "sending heartbeat to " << secondary.first;
+        LOG_INFO << "sending heartbeat to " << secondary.hostname;
 
-        int64_t last_id = getLastId(secondary.first);
-        LOG_INFO << "service " << secondary.first << " returned last message id: " << last_id;
+        secondary.last_id = getLastId(secondary.hostname);
+        LOG_INFO << "service " << secondary.hostname << " returned last message id: " << secondary.last_id;
 
-        bool prevStatus = secondary.second;
-        if (last_id >= 0) {
-            LOG_INFO << "service " << secondary.first << " is OK";
-            secondary.second = true;
+        bool prevStatus = secondary.status;
+        if (secondary.last_id >= 0) {
+            LOG_INFO << "service " << secondary.hostname << " is OK";
+            secondary.status = true;
         }
         else
         {
-            LOG_INFO << "service " << secondary.first << " is not responding";
-            secondary.second = false;
+            LOG_INFO << "service " << secondary.hostname << " is not responding";
+            secondary.status = false;
         }
 
-        if (prevStatus != secondary.second)
+        if (prevStatus != secondary.status)
         {
             LOG_INFO << "status has changed";
             condition_changed_ = true;
-            sec_changed_.insert(secondary);
+            sec_changed_.push_back(secondary);
             cv_.notify_one();
         }
     }
@@ -143,7 +147,7 @@ void HealthMonitor::waitForStatusChange() {
     
     for (auto& secondary : sec_changed_)
     {
-        LOG_INFO << "waitForStatusChange: status changed for " << secondary.first;
+        LOG_INFO << "waitForStatusChange: status changed for " << secondary.hostname;
         if (callback_) {
             callback_(secondary);
         }
@@ -154,8 +158,7 @@ void HealthMonitor::waitForStatusChange() {
 
 void HealthMonitor::stopMonitor()
 {
-    // TODO: need to fix, currently does not work
-    LOG_INFO << "stopMonitor"; 
+    LOG_INFO << "stopMonitor";
 
     running_ = false;
     cv_.notify_all();
@@ -169,7 +172,7 @@ bool HealthMonitor::isRunning()
     return running_;
 }
 
-std::map<std::string, bool> HealthMonitor::getOverallStatus()
+std::vector<SecondaryStatus> HealthMonitor::getOverallStatus()
 {
     std::unique_lock<std::mutex> lock(mutex_);
     return secondaries_;
@@ -180,8 +183,8 @@ bool HealthMonitor::getStatus(const std::string secondary_host)
     std::unique_lock<std::mutex> lock(mutex_);
     for (auto& secondary : secondaries_)
     {
-        if (secondary.first == secondary_host)
-            return secondary.second;
+        if (secondary.hostname == secondary_host)
+            return secondary.status;
     }
     return false;
 }
