@@ -15,6 +15,7 @@
 
 #include "crow_all.h" //http server
 #include "Logger.hpp"
+#include "HealthMonitor.h"
 #include "params.hpp"
 #include "grpc_request.hpp"
 
@@ -114,6 +115,23 @@ void startHttpServer(bool isMaster)
                 {
                     return crow::response{500};
                 } });
+
+        CROW_ROUTE(app, "/health")
+            .methods("GET"_method)([](const crow::request& req) {
+                crow::json::wvalue x;
+
+                std::vector<std::string> hosts{"localhost:2510"};
+                const grpc::string kHealthyService("healthy_service");
+
+                HealthMonitor& monitor = HealthMonitor::getInstance();
+
+                for (auto secondary : monitor.getOverallStatus())
+                {
+                    x[secondary.first] = secondary.second;
+                }
+
+                return x;
+            });
     }
     
     uint64_t port = params.http_port;
@@ -123,6 +141,10 @@ void startHttpServer(bool isMaster)
 }
 
 int main(int argc, const char * argv[]) {
+    //set filename if need to redirect all logs to file
+    Logger logger("");
+    const grpc::string kHealthyService("healthy_service");
+
     LOG_INFO << "Starting replicated log process";
     //set filename if need to redirect all logs to file
     if (!parse_args(argc, argv, &params))
@@ -139,19 +161,45 @@ int main(int argc, const char * argv[]) {
         std::string server_address{params.hostname};
         server_address.append(":").append(params.rpc_port);
         ReplicateServiceImpl service;
-        
+
+        // Enable native grpc health check
+        grpc::EnableDefaultHealthCheckService(true);
+
         // Build server
         ServerBuilder builder;
         builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
         builder.RegisterService(&service);
         // Run server
         std::unique_ptr<Server> replicate_server{builder.BuildAndStart()};
+
+        // Setup health service
+        grpc::HealthCheckServiceInterface* health_service = replicate_server->GetHealthCheckService();
+        health_service->SetServingStatus(kHealthyService, true);
+
         LOG_INFO << "replicate service is listening on " << server_address;
         // Wait for httpThread to exit here so that replicate_server is not destroyed
         httpThread.join();
     }
     else
     {
+        HealthMonitor& monitor = HealthMonitor::getInstance();
+        monitor.init(params.slaves, kHealthyService);
+        monitor.setCallback([](std::pair<std::string, bool> secondary) {
+            LOG_INFO << "Status of secondary " << secondary.first << " has changed to " << (secondary.second ? "running" : "not available");
+          });
+
+        std::thread healthStatusThread([&monitor] {
+            while (true)
+            {
+                LOG_INFO << "healthStatusThread started..";
+                monitor.waitForStatusChange();
+                LOG_INFO << "healthStatusThread executed..";
+            }
+        });
+
+        monitor.startMonitor();
+
+        healthStatusThread.join();
         httpThread.join();
     }
 //TODO: dockerfile, docker composer
