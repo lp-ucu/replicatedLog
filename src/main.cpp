@@ -56,6 +56,7 @@ int saveMessage(std::string message, size_t id)
         std::lock_guard<std::mutex> lock(mu);
         // idempotent operation
         messages.insert(std::tuple<int64_t, std::string>(id, message));
+        HealthMonitor::getInstance().setGlobalLastMessageId(id);
     }
 
     return 0;
@@ -147,6 +148,7 @@ void startHttpServer(bool isMaster)
 
                 for (auto secondary : monitor.getOverallStatus())
                 {
+                    if (secondary.hostname.empty()) continue; // skip master
                     x[secondary.hostname] = secondary.status;
                 }
 

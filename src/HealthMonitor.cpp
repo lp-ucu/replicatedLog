@@ -62,21 +62,20 @@ void HealthMonitor::init(const std::vector<std::string> secondaries, const uint6
 {
     timeout_ = timeout;
 
+    // adding master
+    nodes_.push_back({"", true, 0});
+
     for (std::string host : secondaries)
     {
-        SecondaryStatus secondary;
-        secondary.hostname = host;
-        secondary.status = false;
-        secondary.last_id = -1;
-        secondaries_.push_back(secondary);
+        nodes_.push_back({host, false, -1});
     }
 }
 
 void HealthMonitor::startMonitor()
 {
-    if (secondaries_.size() == 0)
+    if (nodes_.size() == 1)
     {
-        LOG_ERROR << "list of monitored hosts is empty, cannot start health checking";
+        LOG_ERROR << "list of monitored secondary hosts is empty, cannot start health checking";
         return;
     }
     running_ = true;
@@ -104,35 +103,40 @@ int64_t HealthMonitor::getLastId(const std::string& secondary) {
     return id;
 }
 
+// rename to "checkForInconcistancy
 void HealthMonitor::sendHeartbeat()
 {
     // TODO: double check requirements.
     // with current implementation, after adding arificial sleep in ReplicateService
     // health check will be OK
     std::unique_lock<std::mutex> lock(mutex_);
-    for (auto& secondary : secondaries_)
+    for (auto& node : nodes_)
     {
-        LOG_INFO << "sending heartbeat to " << secondary.hostname;
+        // do not check master
+        if (node.hostname.empty()) continue;
+        
+        LOG_INFO << "sending heartbeat to " << node.hostname;
 
-        secondary.last_id = getLastId(secondary.hostname);
-        LOG_INFO << "service " << secondary.hostname << " returned last message id: " << secondary.last_id;
+        node.last_id = getLastId(node.hostname);
+        LOG_INFO << "service " << node.hostname << " returned last message id: " << node.last_id;
 
-        bool prevStatus = secondary.status;
-        if (secondary.last_id >= 0) {
-            LOG_INFO << "service " << secondary.hostname << " is OK";
-            secondary.status = true;
+        bool prevStatus = node.status;
+        if (node.last_id >= 0) {
+            LOG_INFO << "service " << node.hostname << " is OK";
+            node.status = true;
         }
         else
         {
-            LOG_INFO << "service " << secondary.hostname << " is not responding";
-            secondary.status = false;
+            LOG_INFO << "service " << node.hostname << " is not responding";
+            node.status = false;
         }
 
-        if (prevStatus != secondary.status)
+        if ((prevStatus != node.status) ||
+            (node.status == true && getMasterNode().last_id != node.last_id))
         {
-            LOG_INFO << "status has changed";
+            LOG_INFO << "Status or consistency of the node: " << node.hostname << " has changed";
             condition_changed_ = true;
-            sec_changed_.push_back(secondary);
+            nodes_changed_.push_back(node);
             cv_.notify_one();
         }
     }
@@ -145,14 +149,14 @@ void HealthMonitor::waitForStatusChange() {
 
     if (!running_) return;
     
-    for (auto& secondary : sec_changed_)
+    for (auto& secondary : nodes_changed_)
     {
         LOG_INFO << "waitForStatusChange: status changed for " << secondary.hostname;
         if (callback_) {
             callback_(secondary);
         }
     }
-    sec_changed_.clear();
+    nodes_changed_.clear();
     condition_changed_ = false;
 }
 
@@ -175,16 +179,27 @@ bool HealthMonitor::isRunning()
 std::vector<SecondaryStatus> HealthMonitor::getOverallStatus()
 {
     std::unique_lock<std::mutex> lock(mutex_);
-    return secondaries_;
+    return nodes_;
 }
 
-bool HealthMonitor::getStatus(const std::string secondary_host)
+bool HealthMonitor::getStatus(const std::string hostname)
 {
     std::unique_lock<std::mutex> lock(mutex_);
-    for (auto& secondary : secondaries_)
+    for (auto& node : nodes_)
     {
-        if (secondary.hostname == secondary_host)
-            return secondary.status;
+        if (node.hostname == hostname)
+            return node.status;
     }
     return false;
+}
+
+void HealthMonitor::setGlobalLastMessageId(size_t last_id)
+{
+    getMasterNode().last_id = last_id;
+}
+
+SecondaryStatus& HealthMonitor::getMasterNode()
+{
+    // currently master is always 1st element
+    return nodes_[0];
 }

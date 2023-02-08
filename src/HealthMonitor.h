@@ -37,10 +37,10 @@ public:
     bool isRunning();
     void setCallback(std::function<void(SecondaryStatus)> callback);
     void waitForStatusChange();
-    int64_t getLastId(const std::string& secondary);
 
     std::vector<SecondaryStatus> getOverallStatus();
-    bool getStatus(const std::string secondary_host);
+    bool getStatus(const std::string hostanme);
+    void setGlobalLastMessageId(size_t last_id);
 
 private:
     HealthMonitor();
@@ -53,13 +53,15 @@ private:
     uint64_t timeout_;
     std::string health_service_name_;
 
-    std::vector<SecondaryStatus> secondaries_;
-    std::vector<SecondaryStatus> sec_changed_;
+    std::vector<SecondaryStatus> nodes_;
+    std::vector<SecondaryStatus> nodes_changed_;
 
     std::function<void(SecondaryStatus)> callback_;
 
     void monitorSecondaries();
     void sendHeartbeat();
+    int64_t getLastId(const std::string& secondary);
+    SecondaryStatus& getMasterNode();
 };
 
 #endif /* HealthMonitor_h */
