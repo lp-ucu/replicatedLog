@@ -73,7 +73,14 @@ class ReplicateServiceImpl final : public ReplicateService::Service {
         LOG_DEBUG << "getLastMessageId: call";
         if (messages.size())
         {
-            message->set_id(std::get<0>(*messages.rbegin()));
+            size_t prevId = 0;
+            std::lock_guard<std::mutex> lock(mu);
+            for (auto it = messages.begin(); it != messages.end(); ++it) {
+                if (std::get<0>(*it)-1 != prevId)
+                    break;
+                prevId++;
+            }
+            message->set_id(prevId);
         }
         else
         {
