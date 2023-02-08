@@ -14,8 +14,7 @@
 #include <mutex>
 #include <condition_variable>
 #include <functional>
-
-#include "health.grpc.pb.h"
+#include <map>
 
 class HealthMonitor
 {
@@ -25,7 +24,7 @@ public:
     HealthMonitor(HealthMonitor const&) = delete;
     void operator=(HealthMonitor const&) = delete;
 
-    void init(const std::vector<std::string> secondaries, const std::string health_service_name, const uint64_t timeout = 20);
+    void init(const std::vector<std::string> secondaries, const uint64_t timeout = 20);
     void startMonitor();
     void stopMonitor();
     bool isRunning();

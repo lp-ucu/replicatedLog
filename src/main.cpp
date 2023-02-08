@@ -159,7 +159,6 @@ void startHttpServer(bool isMaster)
 int main(int argc, const char * argv[]) {
     //set filename if need to redirect all logs to file
     Logger logger("");
-    const grpc::string kHealthyService("healthy_service");
 
     LOG_INFO << "Starting replicated log process";
     //set filename if need to redirect all logs to file
@@ -178,20 +177,12 @@ int main(int argc, const char * argv[]) {
         server_address.append(":").append(params.rpc_port);
         ReplicateServiceImpl service;
 
-        // Enable native grpc health check
-        grpc::EnableDefaultHealthCheckService(true);
-
         // Build server
         ServerBuilder builder;
         builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
         builder.RegisterService(&service);
         // Run server
         std::unique_ptr<Server> replicate_server{builder.BuildAndStart()};
-
-        // Setup health service
-        grpc::HealthCheckServiceInterface* health_service = replicate_server->GetHealthCheckService();
-        health_service->SetServingStatus(kHealthyService, true);
-
         LOG_INFO << "replicate service is listening on " << server_address;
         // Wait for httpThread to exit here so that replicate_server is not destroyed
         httpThread.join();
@@ -199,7 +190,7 @@ int main(int argc, const char * argv[]) {
     else
     {
         HealthMonitor& monitor = HealthMonitor::getInstance();
-        monitor.init(params.slaves, kHealthyService);
+        monitor.init(params.slaves);
         monitor.setCallback([](std::pair<std::string, bool> secondary) {
             LOG_INFO << "Status of secondary " << secondary.first << " has changed to " << (secondary.second ? "running" : "not available");
           });

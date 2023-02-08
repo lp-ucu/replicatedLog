@@ -1,6 +1,5 @@
 //
 //  HealthMonitor.cpp
-//  health_grpc_proto
 //
 //  Created by Liudmyla Patenko on 03.02.2023.
 //
@@ -9,16 +8,11 @@
 #include "Logger.hpp"
 
 #include <grpcpp/grpcpp.h>
-#include "health.grpc.pb.h"
 #include "replicate.grpc.pb.h"
 
 using grpc::ClientContext;
 using grpc::Status;
 using grpc::Channel;
-
-using grpc::health::v1::Health;
-using grpc::health::v1::HealthCheckRequest;
-using grpc::health::v1::HealthCheckResponse;
 
 using replicatedlog::ReplicateService;
 using replicatedlog::LastMessageId;
@@ -64,9 +58,8 @@ HealthMonitor& HealthMonitor::getInstance() {
     return instance;
 }
 
-void HealthMonitor::init(const std::vector<std::string> secondaries, const std::string health_service_name, const uint64_t timeout)
+void HealthMonitor::init(const std::vector<std::string> secondaries, const uint64_t timeout)
 {
-    health_service_name_ = health_service_name;
     timeout_ = timeout;
 
     for (std::string host : secondaries)
@@ -116,22 +109,13 @@ void HealthMonitor::sendHeartbeat()
     std::unique_lock<std::mutex> lock(mutex_);
     for (auto& secondary : secondaries_)
     {
-        HealthCheckRequest request;
-        request.set_service(health_service_name_);
-
         LOG_INFO << "sending heartbeat to " << secondary.first;
-
-        HealthCheckResponse response;
-        ClientContext context;
-        std::shared_ptr<Channel> channel = CreateChannel(secondary.first, grpc::InsecureChannelCredentials());
-        std::unique_ptr<Health::Stub> hc_stub = grpc::health::v1::Health::NewStub(channel);
-        Status s = hc_stub->Check(&context, request, &response);
 
         int64_t last_id = getLastId(secondary.first);
         LOG_INFO << "service " << secondary.first << " returned last message id: " << last_id;
 
         bool prevStatus = secondary.second;
-        if (s.ok()) {
+        if (last_id >= 0) {
             LOG_INFO << "service " << secondary.first << " is OK";
             secondary.second = true;
         }
