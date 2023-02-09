@@ -44,7 +44,7 @@ public:
     std::chrono::system_clock::time_point deadline = std::chrono::system_clock::now() + std::chrono::seconds(waitfor);
     context.set_deadline(deadline);
     finished_ = false;
-    LOG_INFO << "  Sending request to " << server<<"...";
+    LOG_DEBUG << "  Sending request to " << server<<"...";
     stub_->async()->appendMessage(&context, &request, &reply,
                                   [mu, cv, this](Status s)
                                   {
@@ -89,7 +89,7 @@ bool ReplicateMessage(int32_t id, const std::string &msg, const std::vector<std:
     while ((success_count < write_concern) && HealthMonitor::getInstance().isRunning())
     {
       g_cv.wait_for(lock, std::chrono::seconds(5));
-      LOG_INFO << "  Replicating message [" << id << ". \'" << msg << "\'];";
+      LOG_DEBUG << "  Replicating message [" << id << ". \'" << msg << "\'];";
       success_count = 0;
       fail_count = 0;
       for (uint32_t i = 0; i < servers.size(); i++)
@@ -99,11 +99,11 @@ bool ReplicateMessage(int32_t id, const std::string &msg, const std::vector<std:
           if (requests[i]->status_.ok())
           {
             success_count++;
-            LOG_INFO << "    Request " << i << " success";
+            LOG_DEBUG << "    Request " << i << " success";
           }
           else
           {
-            LOG_INFO << "    Request " << i << " error:" << requests[i]->status_.error_message();
+            LOG_DEBUG << "    Request " << i << " error:" << requests[i]->status_.error_message();
             // Re-send request: delete old GreetRequest object, create a new one and send request to the same server
             delete requests[i];
             requests[i] = new GreetRequest(id, msg, servers[i]);
@@ -122,6 +122,6 @@ bool ReplicateMessage(int32_t id, const std::string &msg, const std::vector<std:
     delete requests[i];
   }
 
-  LOG_INFO << " Result:" << (success_count >= write_concern);
+  LOG_INFO << " Message replicate result:" << ((success_count >= write_concern) ? "OK" : "KO");
   return success_count >= write_concern;
 }

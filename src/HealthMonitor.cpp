@@ -35,10 +35,9 @@ public:
 
         // Handle response
         if (status.ok()) {
-            LOG_DEBUG << "Service is alive! Last message id: '" << response.id();
             return response.id();
         } else {
-            LOG_ERROR << status.error_code() << ": " << status.error_message();
+            LOG_DEBUG << status.error_code() << ": " << status.error_message();
             return -1;
         }
     }
@@ -112,18 +111,13 @@ void HealthMonitor::checkForInconsistency()
     {
         // do not check master
         if (node.hostname.empty()) continue;
-        
-        LOG_INFO << "sending heartbeat to " << node.hostname;
 
         node.last_id = getLastId(node.hostname);
-        LOG_INFO << "service " << node.hostname << " returned last message id: " << node.last_id;
 
         bool prevStatus = node.status;
 
         if (node.last_id < 0) // secondary is not available
         {
-            LOG_INFO << "service " << node.hostname << " is not responding";
-
             // secondary is already inactive for a long time, do nothig
             if (node.status == SecondaryStatus::UNHEALTHY) continue;
 
@@ -144,6 +138,7 @@ void HealthMonitor::checkForInconsistency()
         }
         else // secondary is healthy
         {
+            LOG_DEBUG << "Secondary '" << node.hostname << "' is alive! Last consecutive message id: " << node.last_id << "; Last id on master: " << getMasterNode().last_id;
             node.inactive_count = 0;
             node.status = SecondaryStatus::HEALTHY;
         }
@@ -151,7 +146,7 @@ void HealthMonitor::checkForInconsistency()
         if ((node.status !=  SecondaryStatus::SUSPECTED && prevStatus != node.status) ||
             (node.status == SecondaryStatus::HEALTHY && getMasterNode().last_id != node.last_id))
         {
-            LOG_INFO << "Status or consistency of the node: " << node.hostname << " has changed";
+            LOG_DEBUG << "Status or consistency of the node: " << node.hostname << " has changed";
             condition_changed_ = true;
             nodes_changed_.push_back(node);
             cv_.notify_one();
@@ -168,7 +163,6 @@ void HealthMonitor::waitForStatusChange() {
     
     for (auto& secondary : nodes_changed_)
     {
-        LOG_INFO << "waitForStatusChange: status changed for " << secondary.hostname;
         if (callback_) {
             callback_(secondary);
         }
