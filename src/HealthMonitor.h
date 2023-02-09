@@ -19,7 +19,8 @@
 struct SecondaryStatus
 {
     std::string hostname;
-    bool status;
+    enum {HEALTHY, SUSPECTED, UNHEALTHY} status;
+    int64_t inactive_count;
     int64_t last_id;
 };
 
@@ -38,8 +39,7 @@ public:
     void setCallback(std::function<void(SecondaryStatus)> callback);
     void waitForStatusChange();
 
-    std::vector<SecondaryStatus> getOverallStatus();
-    bool getStatus(const std::string hostanme);
+    std::string getStatus(const std::string hostanme);
     void setGlobalLastMessageId(size_t last_id);
 
 private:

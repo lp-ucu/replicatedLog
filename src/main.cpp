@@ -146,10 +146,9 @@ void startHttpServer(bool isMaster)
 
                 HealthMonitor& monitor = HealthMonitor::getInstance();
 
-                for (auto secondary : monitor.getOverallStatus())
+                for (auto secondary : params.slaves)
                 {
-                    if (secondary.hostname.empty()) continue; // skip master
-                    x[secondary.hostname] = secondary.status;
+                    x[secondary] = monitor.getStatus(secondary);
                 }
 
                 return x;
@@ -197,7 +196,7 @@ int main(int argc, const char * argv[]) {
         HealthMonitor& monitor = HealthMonitor::getInstance();
         monitor.init(params.slaves, 5);
         monitor.setCallback([](SecondaryStatus secondary) {
-            LOG_INFO << "Status of secondary " << secondary.hostname << " has changed to " << (secondary.status ? "running" : "not available") << " last id: " << secondary.last_id;
+            LOG_INFO << "Status of secondary " << secondary.hostname << " has changed to " << secondary.status << " last id: " << secondary.last_id;
           });
 
         std::thread healthStatusThread([&monitor] {

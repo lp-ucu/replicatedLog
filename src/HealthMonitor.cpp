@@ -51,6 +51,8 @@ HealthMonitor::HealthMonitor():
 running_(false),
 condition_changed_(false)
 {
+    // adding master
+    nodes_.push_back({"", SecondaryStatus::HEALTHY, 0, 0});
 }
 
 HealthMonitor& HealthMonitor::getInstance() {
@@ -62,12 +64,9 @@ void HealthMonitor::init(const std::vector<std::string> secondaries, const uint6
 {
     timeout_ = timeout;
 
-    // adding master
-    nodes_.push_back({"", true, 0});
-
     for (std::string host : secondaries)
     {
-        nodes_.push_back({host, false, -1});
+        nodes_.push_back({host, SecondaryStatus::UNHEALTHY, -1, -1});
     }
 }
 
@@ -121,18 +120,37 @@ void HealthMonitor::sendHeartbeat()
         LOG_INFO << "service " << node.hostname << " returned last message id: " << node.last_id;
 
         bool prevStatus = node.status;
-        if (node.last_id >= 0) {
-            LOG_INFO << "service " << node.hostname << " is OK";
-            node.status = true;
-        }
-        else
+
+        if (node.last_id < 0) // secondary is not available
         {
             LOG_INFO << "service " << node.hostname << " is not responding";
-            node.status = false;
+
+            // secondary is already inactive for a long time, do nothig
+            if (node.status == SecondaryStatus::UNHEALTHY) continue;
+
+            node.inactive_count++;
+            if (prevStatus == SecondaryStatus::HEALTHY)
+            {
+                // setting suspected state, but do nothing, maybe it is a network issue
+                node.status = SecondaryStatus::SUSPECTED;
+                continue;
+            }
+
+            // secondary is confirmed to be unhealthy
+            if (node.inactive_count > 5)
+            {
+                node.status = SecondaryStatus::UNHEALTHY;
+                node.inactive_count = -1;
+            }
+        }
+        else // secondary is healthy
+        {
+            node.inactive_count = 0;
+            node.status = SecondaryStatus::HEALTHY;
         }
 
-        if ((prevStatus != node.status) ||
-            (node.status == true && getMasterNode().last_id != node.last_id))
+        if ((node.status !=  SecondaryStatus::SUSPECTED && prevStatus != node.status) ||
+            (node.status == SecondaryStatus::HEALTHY && getMasterNode().last_id != node.last_id))
         {
             LOG_INFO << "Status or consistency of the node: " << node.hostname << " has changed";
             condition_changed_ = true;
@@ -176,21 +194,25 @@ bool HealthMonitor::isRunning()
     return running_;
 }
 
-std::vector<SecondaryStatus> HealthMonitor::getOverallStatus()
-{
-    std::unique_lock<std::mutex> lock(mutex_);
-    return nodes_;
-}
-
-bool HealthMonitor::getStatus(const std::string hostname)
+std::string HealthMonitor::getStatus(const std::string hostname)
 {
     std::unique_lock<std::mutex> lock(mutex_);
     for (auto& node : nodes_)
     {
         if (node.hostname == hostname)
-            return node.status;
+            switch (node.status)
+            {
+                case SecondaryStatus::HEALTHY:
+                    return "Healthy";
+                case SecondaryStatus::SUSPECTED:
+                    return "Suspected";
+                case SecondaryStatus::UNHEALTHY:
+                    return "Unhealthy";
+                default:
+                    return "Undefined";
+            }
     }
-    return false;
+    return "Undefined";
 }
 
 void HealthMonitor::setGlobalLastMessageId(size_t last_id)
