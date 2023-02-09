@@ -59,7 +59,7 @@ private:
     std::function<void(SecondaryStatus)> callback_;
 
     void monitorSecondaries();
-    void sendHeartbeat();
+    void checkForInconsistency();
     int64_t getLastId(const std::string& secondary);
     SecondaryStatus& getMasterNode();
 };

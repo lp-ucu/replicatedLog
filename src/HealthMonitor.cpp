@@ -91,7 +91,7 @@ void HealthMonitor::monitorSecondaries()
     while (running_)
     {
         std::this_thread::sleep_for(std::chrono::seconds(timeout_));
-        sendHeartbeat();
+        checkForInconsistency();
     }
     LOG_INFO << "monitorSecondaries Stopped"; 
 }
@@ -102,8 +102,7 @@ int64_t HealthMonitor::getLastId(const std::string& secondary) {
     return id;
 }
 
-// rename to "checkForInconcistancy
-void HealthMonitor::sendHeartbeat()
+void HealthMonitor::checkForInconsistency()
 {
     // TODO: double check requirements.
     // with current implementation, after adding arificial sleep in ReplicateService
