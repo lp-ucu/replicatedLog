@@ -114,7 +114,9 @@ void HealthMonitor::checkForInconsistency()
 
         node.last_id = getLastId(node.hostname);
 
-        bool prevStatus = node.status;
+        // bool prevStatus = node.status;
+        auto prevStatus = node.status;
+
 
         if (node.last_id < 0) // secondary is not available
         {
@@ -143,8 +145,8 @@ void HealthMonitor::checkForInconsistency()
             node.status = SecondaryStatus::HEALTHY;
         }
 
-        if ((node.status !=  SecondaryStatus::SUSPECTED && prevStatus != node.status) ||
-            (node.status == SecondaryStatus::HEALTHY && getMasterNode().last_id != node.last_id))
+        if (((node.status !=  SecondaryStatus::SUSPECTED) && (prevStatus != node.status)) ||
+            ((node.status == SecondaryStatus::HEALTHY) && (getMasterNode().last_id != node.last_id)))
         {
             LOG_DEBUG << "Status or consistency of the node: " << node.hostname << " has changed";
             condition_changed_ = true;
