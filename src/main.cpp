@@ -9,6 +9,7 @@
 #include <thread>
 #include <tuple>
 #include <mutex>
+#include <string>
 
 #include <grpcpp/grpcpp.h>
 #include "replicate.grpc.pb.h"
@@ -51,7 +52,7 @@ std::set<std::tuple<int64_t, std::string>> messages;
 
 int saveMessage(std::string message, size_t id)
 {
-    LOG_DEBUG << "saveMessage '" << message << "' with id: " << id;
+    LOG_INFO << "saveMessage '" << message << "' with id: " << id;
     {
         std::lock_guard<std::mutex> lock(mu);
         // idempotent operation
@@ -63,14 +64,12 @@ int saveMessage(std::string message, size_t id)
 
 class ReplicateServiceImpl final : public ReplicateService::Service {
     Status appendMessage(ServerContext* context, const MessageItem* message, ReplicateResponce* response) override {
-        LOG_DEBUG << "replicating message: '" << message->text() << "' with id: " << message->id();
         saveMessage(message->text(), message->id());
         response->set_res(0);
         return Status::OK;
     }
 
     Status getLastMessageId(ServerContext* context, const ReplicateParamStub* param, LastMessageId* message) override {
-        LOG_DEBUG << "getLastMessageId: call";
         if (messages.size())
         {
             size_t prevId = 0;
@@ -146,10 +145,9 @@ void startHttpServer(bool isMaster)
 
                 HealthMonitor& monitor = HealthMonitor::getInstance();
 
-                for (auto secondary : monitor.getOverallStatus())
+                for (auto secondary : params.slaves)
                 {
-                    if (secondary.hostname.empty()) continue; // skip master
-                    x[secondary.hostname] = secondary.status;
+                    x[secondary] = monitor.getStatus(secondary);
                 }
 
                 return x;
@@ -163,15 +161,17 @@ void startHttpServer(bool isMaster)
 }
 
 int main(int argc, const char * argv[]) {
-    //set filename if need to redirect all logs to file
-    Logger logger("");
 
-    LOG_INFO << "Starting replicated log process";
-    //set filename if need to redirect all logs to file
     if (!parse_args(argc, argv, &params))
     {
         return -1;
     }
+
+    //set filename if need to redirect all logs to file
+    //std::string filename = std::string("log_") + params.hostname + "_" + std::to_string(params.http_port);
+    //Logger logger(filename);
+
+    LOG_INFO << "Starting replicated log process";
 
     LOG_INFO << "Running as " << (params.isMaster ? "master" : "slave");
 
@@ -197,7 +197,7 @@ int main(int argc, const char * argv[]) {
         HealthMonitor& monitor = HealthMonitor::getInstance();
         monitor.init(params.slaves, 5);
         monitor.setCallback([](SecondaryStatus secondary) {
-            LOG_INFO << "Status of secondary " << secondary.hostname << " has changed to " << (secondary.status ? "running" : "not available") << " last id: " << secondary.last_id;
+            LOG_INFO << "Status of secondary " << secondary.hostname << " has changed to " << secondary.status << " last id: " << secondary.last_id;
           });
 
         std::thread healthStatusThread([&monitor] {

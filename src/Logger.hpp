@@ -47,7 +47,8 @@ class Logger {
 #define LOG_DEBUG                                                  \
     crow::logger(crow::LogLevel::Info)
 #else
-#define LOG_DEBUG
+#define LOG_DEBUG                                                   \
+    crow::logger(crow::LogLevel::Debug)
 #endif
 
 #define LOG_CRITICAL                                                  \
