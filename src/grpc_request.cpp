@@ -7,6 +7,7 @@
 #include <grpcpp/grpcpp.h>
 #include "replicate.grpc.pb.h"
 #include "Logger.hpp"
+#include "HealthMonitor.h"
 // #include "myproto/hello.grpc.pb.h"
 
 using grpc::Channel;
@@ -26,6 +27,9 @@ class GreetRequest
 public:
   std::string server;
   grpc::ClientContext context;
+  // bool ok = 0;
+  Status status_;
+  bool finished_ = false;
 
   GreetRequest(const size_t id, const std::string &text, std::string server)
       : server(server),
@@ -35,32 +39,20 @@ public:
     request.set_text(text);
   }
 
-  bool send(std::mutex *mu, std::condition_variable *cv, uint32_t *fail_count, uint32_t *success_count, uint32_t waitfor)
+  bool send(std::mutex *mu, std::condition_variable *cv, uint32_t waitfor)
   {
     std::chrono::system_clock::time_point deadline = std::chrono::system_clock::now() + std::chrono::seconds(waitfor);
     context.set_deadline(deadline);
-
-    // std::cout << "  Request to " << server;
-    LOG_INFO << "  Request to " << server;
+    finished_ = false;
+    LOG_INFO << "  Sending request to " << server<<"...";
     stub_->async()->appendMessage(&context, &request, &reply,
-                                  [mu, cv, fail_count, success_count](Status s)
+                                  [mu, cv, this](Status s)
                                   {
-                                    // std::cout << "    r\r\n";
                                     std::lock_guard<std::mutex> lock(*mu);
-                                    //  done = true;
-                                    if (s.ok())
-                                    {
-                                      (*success_count)++;
-                                    }
-                                    else
-                                    {
-                                      // std::cout << s.error_message() << std::endl;
-                                      LOG_INFO <<"Request error:"<< s.error_message();
-                                      (*fail_count)++;
-                                    }
+                                    status_ = s;
+                                    finished_ = true;
                                     cv->notify_one();
                                   });
-    LOG_INFO << "Request sent";
     return true;
   }
 
@@ -78,7 +70,7 @@ private:
 
 bool ReplicateMessage(int32_t id, const std::string &msg, const std::vector<std::string> &servers, uint32_t write_concern)
 {
-  std::mutex g_mu;
+  std::mutex r_mutex;
   uint32_t success_count = 0;
   uint32_t fail_count = 0;
 
@@ -88,29 +80,48 @@ bool ReplicateMessage(int32_t id, const std::string &msg, const std::vector<std:
 
   for (uint32_t i = 0; i < servers.size(); i++)
   {
-    GreetRequest *request = new GreetRequest(id, msg, servers[i]);
-    requests.push_back(request);
-    request->send(&g_mu, &g_cv, &fail_count, &success_count, 2);
+    requests.push_back(new GreetRequest(id, msg, servers[i]));
+    requests[i]->send(&r_mutex, &g_cv, 2);
   }
 
   {
-    std::unique_lock<std::mutex> lock(g_mu);
-    while ((success_count < write_concern) && (success_count + fail_count < servers.size()))
+    std::unique_lock<std::mutex> lock(r_mutex);
+    while ((success_count < write_concern) && HealthMonitor::getInstance().isRunning())
     {
-      // std::cout << "   wait " << success_count << " " << fail_count << std::endl;
-      g_cv.wait(lock);
+      g_cv.wait_for(lock, std::chrono::seconds(5));
+      LOG_INFO << "  Replicating message [" << id << ". \'" << msg << "\'];";
+      success_count = 0;
+      fail_count = 0;
+      for (uint32_t i = 0; i < servers.size(); i++)
+      {
+        if (requests[i]->finished_)
+        {
+          if (requests[i]->status_.ok())
+          {
+            success_count++;
+            LOG_INFO << "    Request " << i << " success";
+          }
+          else
+          {
+            LOG_INFO << "    Request " << i << " error:" << requests[i]->status_.error_message();
+            // Re-send request: delete old GreetRequest object, create a new one and send request to the same server
+            delete requests[i];
+            requests[i] = new GreetRequest(id, msg, servers[i]);
+            requests[i]->send(&r_mutex, &g_cv, 2);
+          }
+        }
+      }
     }
   }
 
-  // std::cout << "  Wait finished" << std::endl;
-
   for (uint32_t i = 0; i < servers.size(); i++)
   {
-    LOG_INFO << "  Request returned:"<<i<<" :" << requests[i]->res();
+    // LOG_INFO << "    Request " << i << " returned " << requests[i]->res();
     // TODO: TryCancel may not work
     requests[i]->context.TryCancel();
     delete requests[i];
   }
-  LOG_INFO << " Result:"<< (success_count >= write_concern);
+
+  LOG_INFO << " Result:" << (success_count >= write_concern);
   return success_count >= write_concern;
 }

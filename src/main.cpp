@@ -56,7 +56,6 @@ int saveMessage(std::string message, size_t id)
         std::lock_guard<std::mutex> lock(mu);
         // idempotent operation
         messages.insert(std::tuple<int64_t, std::string>(id, message));
-        HealthMonitor::getInstance().setGlobalLastMessageId(id);
     }
 
     return 0;
@@ -128,6 +127,7 @@ void startHttpServer(bool isMaster)
 
                 LOG_DEBUG << "received POST with message " << x["message"].s() << " and wite concern: " << w_concern;
                 saveMessage(x["message"].s(), local_id);
+                HealthMonitor::getInstance().setGlobalLastMessageId(local_id);
 
                 bool ok = ReplicateMessage(local_id, x["message"].s(), params.slaves, w_concern - 1);
 
@@ -178,7 +178,6 @@ int main(int argc, const char * argv[]) {
     std::thread httpThread(startHttpServer, params.isMaster);
     if(!params.isMaster)
     {
-        // std::thread serviceThread(runReplicateService, params.hostname, params.rpc_port);
         std::string server_address{params.hostname};
         server_address.append(":").append(params.rpc_port);
         ReplicateServiceImpl service;
@@ -204,9 +203,7 @@ int main(int argc, const char * argv[]) {
         std::thread healthStatusThread([&monitor] {
             while (monitor.isRunning())
             {
-                // LOG_INFO << "healthStatusThread started..";
                 monitor.waitForStatusChange();
-                LOG_INFO << "healthStatusThread ok..";
             }
             LOG_INFO << "healthStatusThread stopped..";
         });
