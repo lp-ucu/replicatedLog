@@ -52,6 +52,7 @@ public:
                                     std::lock_guard<std::mutex> lock(*mu);
                                     status_ = s;
                                     finished_ = true;
+                                    // LOG_DEBUG << "  --- Request finished: "<<status_.error_message();
                                     cv->notify_one();
                                   });
     return true;
@@ -74,6 +75,26 @@ private:
 
 };
 
+bool SyncMessage(int32_t id, const std::string &msg, std::string server)
+{
+  std::mutex r_mutex;
+  std::condition_variable request_cv;
+  auto request = GreetRequest(id, msg, server);
+  request.send(&r_mutex, &request_cv, 5);
+  LOG_DEBUG << " Syncing message [" << id << ". \'" << msg << "\'] with "<<server<<";";
+
+  while(1)
+  {
+    std::unique_lock<std::mutex> lock(r_mutex);
+    request_cv.wait_for(lock, std::chrono::seconds(5));
+    if(request.finished_) break;
+  }
+  LOG_INFO << "   Message sync result: " << (request.status_.ok() ? "OK" : request.status_.error_message());
+
+  return request.status_.ok();
+}
+
+
 bool ReplicateMessage(int32_t id, const std::string &msg, const std::vector<std::string> &servers, uint32_t write_concern)
 {
   std::mutex r_mutex;
@@ -94,7 +115,7 @@ bool ReplicateMessage(int32_t id, const std::string &msg, const std::vector<std:
     while ((success_count < write_concern) && HealthMonitor::getInstance().isRunning())
     {
       std::unique_lock<std::mutex> lock(r_mutex);
-      request_cv.wait_for(lock, std::chrono::seconds(5));
+      request_cv.wait_for(lock, std::chrono::seconds(10));
       LOG_DEBUG << "  Replicating message [" << id << ". \'" << msg << "\'];";
       success_count = 0;
       fail_count = 0;
@@ -131,23 +152,29 @@ bool ReplicateMessage(int32_t id, const std::string &msg, const std::vector<std:
     }
   }
 
+  // std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+
   while (!all_finished)
   {
     std::unique_lock<std::mutex> lock(r_mutex);
-    request_cv.wait(lock);
-    all_finished = true;
 
+    all_finished = true;
     for(auto request:requests)
     {
       if (!request->finished_) all_finished = false;
     }
+    if (all_finished) break;
+
+    // LOG_INFO << " Wait for requests to finish:";
+    request_cv.wait_for(lock, std::chrono::seconds(5));
+    // LOG_INFO << " ...";
   }
 
   for (uint32_t i = 0; i < servers.size(); i++)
   {
     if (requests[i] != nullptr)
     {
-      // requests[i]->cancel();
+      // LOG_INFO << "  - Delete:";
       delete requests[i];
       requests[i] = nullptr;
     }

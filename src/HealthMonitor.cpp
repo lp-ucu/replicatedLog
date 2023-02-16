@@ -31,6 +31,8 @@ public:
         LastMessageId response;
         ClientContext context;
         Status status;
+        std::chrono::system_clock::time_point deadline = std::chrono::system_clock::now() + std::chrono::seconds(1);
+        context.set_deadline(deadline);
         status = _stub->getLastMessageId(&context, stub, &response);
 
         // Handle response

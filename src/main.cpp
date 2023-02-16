@@ -198,6 +198,23 @@ int main(int argc, const char * argv[]) {
         monitor.init(params.slaves, 5);
         monitor.setCallback([](SecondaryStatus secondary) {
             LOG_INFO << "Status of secondary " << secondary.hostname << " has changed to " << secondary.status << " last id: " << secondary.last_id;
+            if ((secondary.status != SecondaryStatus::UNHEALTHY))
+            {
+                int64_t next_msg_id = secondary.last_id + 1;
+                const std::string* next_msg = 0;
+
+                for (auto &[id, msg] : messages)
+                {
+                    if (id == next_msg_id)
+                    {
+                        next_msg = &msg;
+                        break;
+                    }
+                }
+                if (!next_msg) return;
+
+                SyncMessage(next_msg_id, *next_msg, secondary.hostname);
+            }
           });
 
         std::thread healthStatusThread([&monitor] {
