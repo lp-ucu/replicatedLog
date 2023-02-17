@@ -45,7 +45,7 @@ public:
     std::chrono::system_clock::time_point deadline = std::chrono::system_clock::now() + std::chrono::seconds(waitfor);
     context_.set_deadline(deadline);
   
-    LOG_DEBUG << "  Sending request to " << hostname_<<"...";
+    // LOG_DEBUG << "  Sending request to " << hostname_<<"...";
     stub_->async()->appendMessage(&context_, &request_, &reply_,
                                   [mu, cv, this](Status s)
                                   {
@@ -116,7 +116,7 @@ bool ReplicateMessage(int32_t id, const std::string &msg, const std::vector<std:
     {
       std::unique_lock<std::mutex> lock(r_mutex);
       request_cv.wait_for(lock, std::chrono::seconds(10));
-      LOG_DEBUG << "  Replicating message [" << id << ". \'" << msg << "\'];";
+      // LOG_DEBUG << "  Replicating message [" << id << ". \'" << msg << "\'];";
       success_count = 0;
       fail_count = 0;
       for (uint32_t i = 0; i < servers.size(); i++)
@@ -126,12 +126,12 @@ bool ReplicateMessage(int32_t id, const std::string &msg, const std::vector<std:
           if (requests[i]->status_.ok())
           {
             success_count++;
-            LOG_DEBUG << "    Request to " << requests[i]->hostname_ << " success";
+            // LOG_DEBUG << "    Request to " << requests[i]->hostname_ << " success";
           }
           else
           {
             fail_count++;
-            LOG_DEBUG << "    Request to " << requests[i]->hostname_ << " error:" << requests[i]->status_.error_message();
+            // LOG_DEBUG << "    Request to " << requests[i]->hostname_ << " error:" << requests[i]->status_.error_message();
             // Re-send request: delete old GreetRequest object, create a new one and send request to the same server
             delete requests[i];
             requests[i] = new GreetRequest(id, msg, servers[i]);

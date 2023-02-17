@@ -20,21 +20,10 @@
 #include "params.hpp"
 #include "grpc_request.hpp"
 
-
-
-SParameters params = {0};
-
-#define MASTER_HTTP_PORT 18080
-#define SLAVE_HTTP_PORT 28080
-#define SLAVE_RPC_PORT "2510"
-
-using grpc::Channel;
-using grpc::ClientContext;
-using grpc::Status;
-
 using grpc::Server;
 using grpc::ServerBuilder;
 using grpc::ServerContext;
+using grpc::Status;
 
 using replicatedlog::ReplicateService;
 using replicatedlog::ReplicateResponce;
@@ -42,13 +31,10 @@ using replicatedlog::MessageItem;
 using replicatedlog::LastMessageId;
 using replicatedlog::ReplicateParamStub;
 
-
-bool isMaster = false;
-crow::SimpleApp app;
+SParameters params = {0};
 std::atomic<size_t> id_count{0};
-std::mutex mu;
-
 std::set<std::tuple<int64_t, std::string>> messages;
+std::mutex mu;
 
 int saveMessage(std::string message, size_t id)
 {
@@ -89,7 +75,7 @@ class ReplicateServiceImpl final : public ReplicateService::Service {
     }
 };
 
-void startHttpServer(bool isMaster)
+void startHttpServer(crow::SimpleApp app, bool isMaster)
 {
     CROW_ROUTE(app, "/messages")
         .methods("GET"_method)([](const crow::request& req) {
@@ -120,7 +106,6 @@ void startHttpServer(bool isMaster)
                 else if (x["w"].u() <= 0 || x["w"].u() > 3)
                     return crow::response(400, "Bad write concern parameter. Allowed values: 1,2,3");
 
-//TODO: id_count make, static, not global,...
                 size_t local_id = ++id_count;
                 size_t w_concern = x["w"].u();
 
@@ -175,7 +160,8 @@ int main(int argc, const char * argv[]) {
 
     LOG_INFO << "Running as " << (params.isMaster ? "master" : "slave");
 
-    std::thread httpThread(startHttpServer, params.isMaster);
+    crow::SimpleApp app;
+    std::thread httpThread(startHttpServer, app, params.isMaster);
     if(!params.isMaster)
     {
         std::string server_address{params.hostname};
@@ -234,7 +220,5 @@ int main(int argc, const char * argv[]) {
 
         healthStatusThread.join();
     }
-//TODO: dockerfile, docker composer
-//TODO: refactor code to use classes
     return 0;
 }
