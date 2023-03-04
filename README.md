@@ -20,11 +20,46 @@ Executable file `main` implements both Master and Secondary when started with an
 (gRPC `getLastMessageId()` is used to check health of the Secondary periodically)
 5. **Retries**: in case of a missing message on Secondaries, Master implements retries every 5 seconds to recover this message. This logic is implemented based on Health monitor: when the monitor detects that the last message id on Secondary differs from the last message id on Master, it triggers Master to replicate this last missing message.  
 Note: retry is performed only for 1 message. If Secondary is missing, for example, 10 messages, Master will require 10\*5 seconds to replicate them (for Health monitor to check last message of Secondary 10 times).
-6. **Docker**?
+6. **Docker** (not implemented for now)
 
-### Execute instructions using Docker
-How to execute Master and Secondary?  
-How to read logs?  
+### Build instructions
+#### Prerequirements:
+**Linux**:  
+```sudo apt-get install asio```
+
+**MacOS**:  
+```brew install asio```
+
+install grpc: https://github.com/grpc/grpc/blob/v1.52.0/src/cpp/README.md
+
+#### Installation:
+**Linux**:
+```
+cmake -Bbuild
+make --build build
+```
+
+**MacOS:**
+```
+mkdir build
+cd build
+cmake ..
+make
+```
+
+### Execute instructions (on host):
+**2 Secondaries:**  
+```
+cd build/src
+./main -s --grpc-port 50051 --hostname 127.0.0.1 --http-port 28080
+./main -s --grpc-port 50052 --hostname 127.0.0.1 --http-port 38080
+```
+
+**Master:**  
+```
+cd build/src
+./main -m --hostname 127.0.0.1 --grpc-port 50050 --http-port 18080 -S 127.0.0.1:50051 -S 127.0.0.1:50052
+```
 
 ## Test scenarios:
 Note: we tested our system only with 1 Master and 2 Secondaries, though it should work with 3+ Secondaries as well.
@@ -45,7 +80,8 @@ Alternatively Postman can be used to send HTTP requests.
 #### Scenario 1 (from task description):
 1. Start master + S1
     ```
-    Docker?
+    ./main -m --hostname 127.0.0.1 --grpc-port 50050 --http-port 18080 -S 127.0.0.1:50051 -S 127.0.0.1:50052
+    ./main -s --grpc-port 50051 --hostname 127.0.0.1 --http-port 28080
     ```
     =>> Logs on Master (repeated every 5 sec):
     ```
@@ -130,6 +166,9 @@ Alternatively Postman can be used to send HTTP requests.
     (2023-02-17 12:57:15) [INFO    ] saveMessage 'Msg4' with id: 4
     ```
 6. Start S2  
+    ```
+    ./main -s --grpc-port 50052 --hostname 127.0.0.1 --http-port 38080
+    ```
     ==> Logs on Master:  
     *(Note Responce 0x12c808200 is made for Request Msg3, W=3)* 
     ```
