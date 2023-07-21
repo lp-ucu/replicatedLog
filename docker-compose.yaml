@@ -1,0 +1,39 @@
+version: '3'
+
+services:
+  master:
+    build:
+      context: .
+    environment:
+      MODE: master
+      HOSTNAME: master
+      GRPC_PORT: 50050
+      HTTP_PORT: 8080
+      SECONDARY_1: secondary1:50050
+      SECONDARY_2: secondary2:50050
+    ports:
+      - "18080:8080"
+
+
+  secondary1:
+    build:
+      context: .
+    environment:
+      MODE: secondary
+      HOSTNAME: secondary1
+      GRPC_PORT: 50050
+      HTTP_PORT: 8080
+    ports:
+      - "28080:8080"
+
+
+  secondary2:
+    build:
+      context: .
+    environment:
+      MODE: secondary
+      HOSTNAME: secondary2
+      GRPC_PORT: 50050
+      HTTP_PORT: 8080
+    ports:
+      - "38080:8080"
