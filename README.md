@@ -20,9 +20,21 @@ Executable file `main` implements both Master and Secondary when started with an
 (gRPC `getLastMessageId()` is used to check health of the Secondary periodically)
 5. **Retries**: in case of a missing message on Secondaries, Master implements retries every 5 seconds to recover this message. This logic is implemented based on Health monitor: when the monitor detects that the last message id on Secondary differs from the last message id on Master, it triggers Master to replicate this last missing message.  
 Note: retry is performed only for 1 message. If Secondary is missing, for example, 10 messages, Master will require 10\*5 seconds to replicate them (for Health monitor to check last message of Secondary 10 times).
-6. **Docker** (not implemented for now)
+6. **Docker**
 
-### Build instructions
+### Docker 
+To build image and start 3 containers (1 master and 3 secondaries):
+```
+docker-compose up
+```
+*Note: building may take some time, mostly due to cloning and building grpc for C++*
+
+HTTP ports of the services in containers are exposed on host:  
+18080 - master  
+28080 - 1st secondary  
+38080 - 2nd secondary  
+This allows to use the same functions as in **Test scenarios** section to send/check messages.
+### Build instructions (on host)
 #### Prerequirements:
 **Linux**:  
 ```sudo apt-get install asio```
